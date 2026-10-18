@@ -1,0 +1,124 @@
+import './styles/main.css';
+type Plan = { id: string; name: string; price: number; currency: string; durationDays: number; maxUsersPerServer: number; isActive: boolean };
+type Sub = { id: string; userId: string; status: string; plan: Plan; planId: string; startedAt: string | null; expiresAt: string | null; credentials: { demoIdentifier: string; revokedAt: string | null }[]; serverSlot: { server: { externalServerId: string } } | null };
+type Order = { id: string; status: string; amount: number; currency: string; lastError: string | null; payments?: { status: string }[] };
+type Ticket = { id: string; number: number; text: string; status: string };
+type Admin = { stats: Record<string, number>; users: { id: string; role: string; identities: { providerUserId: string }[]; subscriptions: { status: string }[] }[]; servers: { externalServerId: string; expiresAt: string; slots: { slotNumber: number; status: string }[] }[]; orders: Order[]; subscriptions: Sub[]; tickets: Ticket[]; plans: Plan[]; settings: { key: string; value: unknown }[]; listLimit: number };
+declare global { interface Window { Telegram?: { WebApp?: { initData: string; ready(): void; expand(): void }; Login?: { auth(o: { client_id: number; nonce: string; scope: string[]; lang: string }, cb: (r: { id_token?: string }) => void): void } } } }
+const $ = <T extends Element = HTMLElement>(s: string) => document.querySelector<T>(s)!;
+const e = (v: unknown) => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
+const money = (n: number, currency = 'RUB') => new Intl.NumberFormat('ru-RU', { style: 'currency', currency }).format(n / 100);
+const date = (v: string | null) => v ? new Date(v).toLocaleDateString('ru-RU') : '—';
+const labels: Record<string, string> = { ACTIVE: 'Активна', EXPIRED: 'Истекла', CANCELLED: 'Отменена', COMPLETED: 'Завершён', PAID: 'Ожидает активации', AWAITING_PAYMENT: 'Ожидает подтверждения', FAILED: 'Ошибка', PENDING: 'Ожидание', OPEN: 'Открыто', CLOSED: 'Закрыто', IN_PROGRESS: 'В работе' };
+const label = (s: string) => labels[s] ?? s;
+class ApiError extends Error { constructor(public status: number, code: string) { super(code); } }
+async function api<T>(path: string, body?: unknown): Promise<T> {
+  const r = await fetch(`/api/v1${path}`, { method: body === undefined ? 'GET' : 'POST', credentials: 'same-origin', headers: body === undefined ? {} : { 'content-type': 'application/json', 'x-shared-vps': '1' }, ...(body === undefined ? {} : { body: JSON.stringify(body) }), signal: AbortSignal.timeout(45000) });
+  const data = await r.json() as T & { error?: string }; if (!r.ok) throw new ApiError(r.status, data.error ?? 'API_ERROR'); return data;
+}
+const messages: Record<string, string> = { LOGIN_REQUIRED: 'Войдите через Telegram.', ADMIN_REQUIRED: 'Этот раздел доступен только администратору.', USE_RENEWAL: 'У вас уже есть подписка. Выберите продление.', ORDER_IN_PROGRESS: 'Завершите текущий заказ в истории.', LOGIN_NOT_CONFIGURED: 'Telegram Login ещё не настроен администратором.', LOGIN_REPLAY: 'Вход уже использован. Откройте приложение заново.', INVALID_INIT_DATA: 'Срок авторизации истёк. Откройте Mini App заново из Telegram.', INVALID_LOGIN: 'Telegram не подтвердил вход. Повторите авторизацию.', PAYMENT_FINAL: 'Заказ уже обработан. Проверьте историю.', ORIGIN_REQUIRED: 'Откройте сайт по адресу Backend Render из инструкции.' };
+const errorText = (err: unknown) => err instanceof ApiError ? messages[err.message] ?? `Действие не выполнено (${err.message}). Проверьте историю заказов.` : 'Сервер временно недоступен или запускается после простоя. Подождите около минуты и повторите. Данные сохраняются.';
+let me: { id: string; role: string } | null = null;
+let config: { botUsername: string | null } = { botUsername: null };
+let loginChallenge: { clientId: string; nonce: string; until: number } | null = null;
+let toastTimer: ReturnType<typeof setTimeout>;
+function toast(s: string) { $('#toast').textContent = s; $('#toast').hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => { $('#toast').hidden = true; }, 10000); }
+const nav = [['/', 'Главная'], ['/catalog', 'Каталог'], ['/subscriptions', 'Мои подписки'], ['/connect', 'Подключение'], ['/orders', 'Заказы'], ['/support', 'Поддержка'], ['/admin', 'Админ-панель']];
+$('#app').innerHTML = `<div class="shell"><header><a class="brand" href="#/"><span class="brand-mark">S</span><span>Shared VPS <small>Platform</small></span></a><div class="header-actions"><span class="demo"><i></i> DEMO MODE</span><button id="theme" class="theme-button" aria-label="Переключить тему">◐</button></div></header><nav class="site-nav" aria-label="Разделы">${nav.map(([url, text]) => `<a href="#${url}" data-route="${url}">${text}</a>`).join('')}</nav><div class="demo-toolbar"><span id="identity">Публичный просмотр</span><button class="text-button" id="login">Войти через Telegram</button></div><main id="page" tabindex="-1"></main><footer><span>Shared VPS Platform · Stage 1.2</span><span>Демонстрация. Списание 0 ₽. Доступы не действуют.</span></footer></div><dialog id="dialog" class="dialog" aria-labelledby="dialog-title"><span class="eyebrow">Демонстрационная операция</span><h2 id="dialog-title"></h2><p id="dialog-description"></p><div class="actions"><button class="secondary" id="dialog-cancel">Отмена</button><button class="primary" id="dialog-confirm">Подтвердить</button></div></dialog><div id="toast" class="toast" role="status" hidden></div>`;
+try { document.documentElement.dataset.theme = localStorage.getItem('shared-vps-theme') ?? 'light'; } catch { /* Optional preference. */ }
+$('#theme').onclick = () => { const theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'; document.documentElement.dataset.theme = theme; try { localStorage.setItem('shared-vps-theme', theme); } catch { /* No business data here. */ } };
+async function script(src: string) { await new Promise<void>((resolve, reject) => { const s = document.createElement('script'); const timeout = setTimeout(() => { s.remove(); reject(new Error('Script unavailable')); }, 8000); s.src = src; s.onload = () => { clearTimeout(timeout); resolve(); }; s.onerror = () => { clearTimeout(timeout); reject(new Error('Script unavailable')); }; document.head.append(s); }); }
+function identity() { $('#identity').textContent = me ? `Telegram · ${me.role === 'ADMIN' ? 'Администратор' : 'Личный кабинет'} · ID ${me.id}` : 'Публичный просмотр'; $('#login').textContent = me ? 'Выйти' : 'Войти через Telegram'; }
+async function action(button: HTMLButtonElement, fn: () => Promise<void>) { if (button.disabled) return; button.disabled = true; try { await fn(); } catch (err) { toast(errorText(err)); } finally { button.disabled = false; } }
+$('#login').onclick = () => { void action($<HTMLButtonElement>('#login'), async () => {
+  if (me) { await api('/auth/logout', {}); me = null; identity(); await route(); return; }
+  if (!loginChallenge || loginChallenge.until < Date.now() || !window.Telegram?.Login) { await prepareLogin(); toast('Вход подготовлен. Нажмите «Войти через Telegram» ещё раз.'); return; }
+  const c = loginChallenge;
+  window.Telegram!.Login!.auth({ client_id: Number(c.clientId), nonce: c.nonce, scope: ['profile'], lang: 'ru' }, r => {
+    if (!r.id_token) { toast('Вход отменён или не подтверждён.'); return; }
+    void api<{ id: string; role: string }>('/auth/telegram', { idToken: r.id_token }).then(u => { me = u; identity(); void route(); }).catch(err => toast(errorText(err)));
+  });
+}); };
+async function prepareLogin() {
+  const [challenge] = await Promise.all([api<{ clientId: string; nonce: string }>('/auth/challenge', {}), window.Telegram?.Login ? Promise.resolve() : script('https://oauth.telegram.org/js/telegram-login.js')]);
+  loginChallenge = { ...challenge, until: Date.now() + 240000 };
+}
+function confirmAction(title: string, text: string, fn: () => Promise<void>) {
+  const dialog = $<HTMLDialogElement>('#dialog'); $('#dialog-title').textContent = title; $('#dialog-description').textContent = text;
+  const yes = $<HTMLButtonElement>('#dialog-confirm'); yes.disabled = false; yes.onclick = () => { void action(yes, async () => { await fn(); dialog.close(); await route(); }); };
+  $('#dialog-cancel').onclick = () => dialog.close(); dialog.showModal();
+}
+const heading = (title: string, description: string) => `<section class="page-heading"><span class="eyebrow">Shared VPS · Demo</span><h1>${title}</h1><p class="lead">${description}</p></section>`;
+function planCard(p: Plan) { return `<article class="panel plan"><div class="card-top"><span class="tag">ДЕМО-ТАРИФ</span><span class="badge">До ${p.maxUsersPerServer} на VPS</span></div><h2>${e(p.name)}</h2><div class="price">${money(p.price, p.currency)}</div><p class="plan-period">за ${p.durationDays} дней · списание 0 ₽</p><ul><li>Независимый срок подписки</li><li>Виртуальный сервер в общей базе</li><li>Демонстрационный доступ</li></ul><button class="primary" data-buy="${p.id}">Оформить тестовую подписку</button><p class="plan-note">Платёж, сервер и доступ симулируются.</p></article>`; }
+function subCard(s: Sub, connect: boolean) { return `<article class="panel"><div class="card-top"><span class="tag">${e(s.plan.name)}</span><span class="badge">${e(label(s.status))}</span></div><h2>Ваша подписка</h2><div class="facts"><div class="fact"><span>Начало</span><strong>${date(s.startedAt)}</strong></div><div class="fact"><span>Окончание</span><strong>${date(s.expiresAt)}</strong></div><div class="fact"><span>Осталось</span><strong>${Math.max(0, Math.ceil((new Date(s.expiresAt ?? 0).getTime() - Date.now()) / 86400000))} дней</strong></div><div class="fact"><span>Виртуальный VPS</span><strong>${e(s.serverSlot?.server.externalServerId ?? 'Ожидание')}</strong></div></div><div class="access-demo">Демонстрационный идентификатор<code>${s.status === 'ACTIVE' ? e(s.credentials.find(c => !c.revokedAt)?.demoIdentifier ?? 'Ожидание') : 'Доступ неактивен'}</code><small>Это не VPN-ключ и не конфигурация.</small></div>${['ACTIVE', 'EXPIRED'].includes(s.status) ? `<div class="actions"><button class="primary" data-renew="${s.id}" data-plan="${s.planId}">Продлить демо</button>${s.status === 'ACTIVE' ? `<button class="danger" data-cancel="${s.id}">Отменить подписку</button>` : ''}</div>` : ''}${connect ? '<ol class="steps"><li>Проверьте статус и срок подписки.</li><li>Найдите свой демо-идентификатор выше.</li><li>Устройство настраивать не требуется: действующих ключей в этом этапе нет.</li></ol>' : '<p><a class="text-button" href="#/connect">Инструкция подключения →</a></p>'}</article>`; }
+const table = (headers: string[], rows: string[][]) => `<div class="table-wrap"><table><thead><tr>${headers.map(x => `<th>${e(x)}</th>`).join('')}</tr></thead><tbody>${rows.map(row => `<tr>${row.map(cell => `<td>${cell}</td>`).join('')}</tr>`).join('') || `<tr><td colspan="${headers.length}">Записей пока нет</td></tr>`}</tbody></table></div>`;
+function ordersTable(orders: Order[], admin = false) { return table(['Заказ', 'Сумма демо', 'Статус', 'Действие'], orders.map(o => [e(o.id), money(o.amount, o.currency), `${e(label(o.status))}${o.lastError ? `<br>${e(o.lastError)}` : ''}`, o.status === 'AWAITING_PAYMENT' && !admin ? `<button class="secondary" data-pay="${o.id}">Подтвердить</button><button class="text-button" data-reject="${o.id}">Отказ</button><button class="text-button" data-order-cancel="${o.id}">Отмена</button>` : admin && o.status === 'PAID' ? `<button class="secondary" data-retry="${o.id}">Повторить активацию</button>` : admin && o.payments?.some(p => p.status === 'SUCCEEDED') ? `<button class="danger" data-refund="${o.id}">Демо-возврат</button>` : '—'])); }
+let generation = 0;
+async function route() {
+  const current = ++generation; const path = location.hash.slice(1) || '/'; const page = $('#page');
+  document.querySelectorAll('[data-route]').forEach(el => el.classList.toggle('active', el.getAttribute('data-route') === path));
+  page.innerHTML = '<p class="notice" role="status">Загружаем данные из PostgreSQL…</p>';
+  try {
+    let html = '';
+    if (path === '/' || path === '/catalog') {
+      const plans = await api<Plan[]>('/plans');
+      html = path === '/' ? `<section class="hero"><span class="eyebrow">Одна платформа · Сайт и Telegram</span><h1>Управление<br><span>серверными подписками</span></h1><p class="lead">Общий сервер, индивидуальный срок.<br>Попробуйте весь путь в демонстрационном режиме.</p><div class="actions"><a class="link-primary" href="#/catalog">Выбрать тариф →</a><a class="link-secondary" href="#/subscriptions">Моя подписка</a></div></section><div class="content-grid">${plans[0] ? planCard(plans[0]) : '<p>Нет активных тарифов.</p>'}<article class="panel status-panel"><span class="eyebrow">Как это работает</span><h2>Три пользователя.<br>Один виртуальный VPS.</h2><p>Первый заказ создаёт виртуальный сервер, второй и третий занимают места. Четвёртый начинает следующий сервер.</p><div class="status-row"><span>Общий Backend и PostgreSQL</span><span class="status online">Доступны</span></div><p class="demo-disclaimer">Сайт и Telegram показывают одни данные. Все операции тестовые.</p></article></div>` : heading('Каталог', 'Тарифы поступают с сервера. Деньги не списываются.') + `<div class="cards two">${plans.map(planCard).join('') || '<p>Нет доступных тарифов.</p>'}</div>`;
+    } else if (!me) html = heading('Личный кабинет', 'Безопасный вход через Telegram.') + '<div class="empty-state panel"><h2>Ваш личный кабинет</h2><p>Войдите через Telegram, чтобы увидеть свои подписки, заказы и обращения. Сайт и бот используют один аккаунт.</p></div>';
+    else if (path === '/subscriptions' || path === '/connect') {
+      const subs = await api<Sub[]>('/subscriptions'); html = heading(path === '/connect' ? 'Подключение' : 'Мои подписки', 'Ваши данные и история сохраняются на сервере.') + `<div class="cards two">${subs.map(s => subCard(s, path === '/connect')).join('') || '<div class="panel empty-state"><h2>Пока нет подписок</h2><a href="#/catalog">Открыть каталог →</a></div>'}</div>`;
+      if (path === '/connect' && config.botUsername) html += `<p><a class="link-secondary" href="https://t.me/${e(config.botUsername)}">Вернуться в Telegram ↗</a></p>`;
+    } else if (path === '/orders') html = heading('История заказов', 'Все суммы условные. Если ответ при покупке потерялся, проверьте статус здесь.') + ordersTable(await api<Order[]>('/orders'));
+    else if (path === '/support') {
+      const tickets = await api<Ticket[]>('/support'); html = heading('Поддержка', 'Ваши обращения доступны и на сайте, и в Telegram.') + '<form id="support-form" class="panel"><label for="support-text">Текст обращения</label><textarea id="support-text" name="text" required minlength="5" maxlength="4000" rows="5" placeholder="Опишите, что произошло"></textarea><button class="primary">Отправить обращение</button></form>' + table(['Номер', 'Сообщение', 'Статус'], tickets.map(t => [`№${t.number}`, e(t.text), e(label(t.status))]));
+    } else if (path === '/admin') html = adminPage(await api<Admin>('/admin'));
+    else html = heading('Страница не найдена', 'Выберите раздел в навигации.');
+    if (current !== generation) return; page.innerHTML = html; bind();
+  } catch (err) { if (current === generation) { page.innerHTML = `<div class="empty-state panel"><h2>${err instanceof ApiError && err.status === 403 ? 'Доступ ограничен' : 'Не удалось загрузить данные'}</h2><p>${e(errorText(err))}</p><button id="reload" class="secondary">Повторить</button></div>`; $('#reload').onclick = () => { void route(); }; } }
+}
+function adminPage(a: Admin) {
+  const stats: Record<string, string> = { users: 'Пользователей', active: 'Активных подписок', orders: 'Тестовых заказов', servers: 'Виртуальных VPS', occupied: 'Занято мест', available: 'Свободно мест', errors: 'Ошибок активации', revenueMinor: 'Демо-выручка', expenseMinor: 'Демо-расходы' };
+  return heading('Админ-панель', 'Общая демонстрационная платформа. Доступ проверяет Backend.') + `<div class="stats">${Object.entries(a.stats).map(([k, v]) => `<div class="stat"><strong>${k.endsWith('Minor') ? money(v) : v}</strong><span>${stats[k] ?? e(k)}</span></div>`).join('')}</div><div class="admin-tabs">${['Серверы', 'Пользователи', 'Заказы', 'Подписки', 'Поддержка', 'Настройки'].map((name, i) => `<a href="#admin-${i}">${name}</a>`).join('')}</div><p class="hint">Списки показывают до ${a.listLimit} записей, счётчики учитывают всю базу.</p><h2 id="admin-0">Виртуальные серверы</h2><div class="cards two">${a.servers.map(s => `<article class="panel"><div class="server-title"><h2>${e(s.externalServerId)}</h2><span class="tag">ДЕМО VPS</span></div><p>Аренда до ${date(s.expiresAt)}</p><div class="slots">${s.slots.map(slot => `<div class="slot ${slot.status === 'OCCUPIED' ? 'occupied' : ''}">Место ${slot.slotNumber}<span>${slot.status === 'OCCUPIED' ? 'Занято' : 'Свободно'}</span></div>`).join('')}</div></article>`).join('') || '<p>Сервер появится после первой покупки.</p>'}</div><h2 id="admin-1">Пользователи</h2>${table(['Пользователь', 'Telegram', 'Роль', 'Подписки'], a.users.map(u => [e(u.id), e(u.identities.map(i => i.providerUserId).join(', ')), e(u.role), e(u.subscriptions.map(s => label(s.status)).join(', '))]))}<h2 id="admin-2">Заказы</h2>${ordersTable(a.orders, true)}<h2 id="admin-3">Подписки</h2>${table(['ID', 'Пользователь', 'Статус', 'Окончание'], a.subscriptions.map(s => [e(s.id), e(s.userId), e(label(s.status)), date(s.expiresAt)]))}<h2 id="admin-4">Поддержка</h2>${table(['Номер', 'Сообщение', 'Статус'], a.tickets.map(t => [`№${t.number}`, e(t.text), `<select data-ticket="${t.id}">${['OPEN', 'IN_PROGRESS', 'CLOSED'].map(status => `<option value="${status}" ${status === t.status ? 'selected' : ''}>${label(status)}</option>`).join('')}</select>`]))}<h2 id="admin-5">Настройки</h2><div class="cards two">${a.plans.map(p => `<form class="panel plan-form" data-plan="${p.id}"><h3>${e(p.name)}</h3><label>Цена, копейки<input name="price" type="number" min="0" max="10000000" value="${p.price}" required></label><label>Дней<input name="durationDays" type="number" min="1" max="365" value="${p.durationDays}" required></label><label>Мест на VPS (1–3)<input name="maxUsersPerServer" type="number" min="1" max="3" value="${p.maxUsersPerServer}" required></label><label><input name="isActive" type="checkbox" ${p.isActive ? 'checked' : ''}> Тариф активен</label><button class="primary">Сохранить тариф</button></form>`).join('')}<form id="settings-form" class="panel"><h3>Параметры новых VPS</h3>${a.settings.filter(s => ['server.monthly_cost_minor', 'server.rental_days', 'server.default_capacity'].includes(s.key)).map(s => `<label>${e(({ 'server.monthly_cost_minor': 'Аренда, копейки', 'server.rental_days': 'Период аренды, дней', 'server.default_capacity': 'Мест на новом VPS' } as Record<string, string>)[s.key])}<input name="${s.key}" type="number" min="1" max="${s.key.endsWith('capacity') ? 3 : s.key.endsWith('days') ? 365 : 10000000}" value="${Number(s.value)}" required></label>`).join('')}<button class="primary">Сохранить параметры</button></form></div><section class="panel"><h2>Telegram Webhook</h2><p>Тот же постоянный бот. Секреты вводятся в Render Environment.</p><button class="secondary" id="register-webhook">Зарегистрировать webhook</button><button class="text-button" id="webhook-status">Проверить webhook</button><pre id="webhook-result"></pre></section>`;
+}
+function bind() {
+  document.querySelectorAll<HTMLButtonElement>('[data-buy],[data-renew]').forEach(btn => btn.onclick = () => {
+    if (!me) { toast('Сначала войдите через Telegram.'); return; }
+    const operationKey = crypto.randomUUID();
+    confirmAction(btn.dataset.renew ? 'Продлить подписку?' : 'Оформить тестовую подписку?', 'Платёж симулируется. Списание 0 ₽. При активной подписке период добавится к текущему окончанию.', async () => {
+      const order = await api<Order>('/orders', { planId: btn.dataset.buy ?? btn.dataset.plan, operationKey, ...(btn.dataset.renew ? { renewalId: btn.dataset.renew } : {}) });
+      await api(`/orders/${order.id}/payment`, { event: 'confirm' }); toast('Тестовая операция сохранена.'); location.hash = '/subscriptions';
+    });
+  });
+  document.querySelectorAll<HTMLButtonElement>('[data-cancel]').forEach(btn => btn.onclick = () => confirmAction('Отменить подписку?', 'Место освободится, история сохранится. Все суммы демонстрационные.', async () => { await api(`/subscriptions/${btn.dataset.cancel}/cancel`, {}); }));
+  document.querySelectorAll<HTMLButtonElement>('[data-pay],[data-reject],[data-order-cancel],[data-retry],[data-refund]').forEach(btn => btn.onclick = () => confirmAction('Выполнить тестовую операцию?', 'Операция не связана с реальными деньгами.', async () => {
+    if (btn.dataset.retry) await api(`/admin/orders/${btn.dataset.retry}/retry`, {});
+    else if (btn.dataset.refund) await api(`/admin/orders/${btn.dataset.refund}/refund`, {});
+    else await api(`/orders/${btn.dataset.pay ?? btn.dataset.reject ?? btn.dataset.orderCancel}/payment`, { event: btn.dataset.pay ? 'confirm' : btn.dataset.reject ? 'fail' : 'cancel' });
+  }));
+  const support = document.querySelector<HTMLFormElement>('#support-form');
+  if (support) support.onsubmit = ev => { ev.preventDefault(); void action(support.querySelector('button')!, async () => { const t = await api<Ticket>('/support', { text: new FormData(support).get('text') }); toast(`Обращение №${t.number} сохранено`); await route(); }); };
+  document.querySelectorAll<HTMLSelectElement>('[data-ticket]').forEach(select => select.onchange = () => { select.disabled = true; void api(`/admin/support/${select.dataset.ticket}`, { status: select.value }).then(() => toast('Статус сохранён')).catch(err => { toast(errorText(err)); void route(); }).finally(() => { select.disabled = false; }); });
+  document.querySelectorAll<HTMLFormElement>('.plan-form').forEach(form => form.onsubmit = ev => { ev.preventDefault(); const data = new FormData(form); void action(form.querySelector('button')!, async () => { await api(`/admin/plans/${form.dataset.plan}`, { price: Number(data.get('price')), durationDays: Number(data.get('durationDays')), maxUsersPerServer: Number(data.get('maxUsersPerServer')), isActive: data.has('isActive') }); toast('Тариф сохранён.'); }); });
+  const settings = document.querySelector<HTMLFormElement>('#settings-form');
+  if (settings) settings.onsubmit = ev => { ev.preventDefault(); void action(settings.querySelector('button')!, async () => { for (const [key, value] of new FormData(settings)) await api('/admin/settings', { key, value: Number(value) }); toast('Параметры сохранены'); }); };
+  const register = document.querySelector<HTMLButtonElement>('#register-webhook');
+  if (register) register.onclick = () => { void action(register, async () => { await api('/admin/telegram/register', {}); toast('Webhook зарегистрирован'); }); };
+  const status = document.querySelector<HTMLButtonElement>('#webhook-status');
+  if (status) status.onclick = () => { void action(status, async () => { $('#webhook-result').textContent = JSON.stringify(await api('/admin/telegram/status'), null, 2); }); };
+  document.querySelectorAll<HTMLAnchorElement>('.admin-tabs a').forEach(a => a.onclick = ev => { ev.preventDefault(); document.getElementById(a.hash.slice(1))?.scrollIntoView({ behavior: 'smooth' }); });
+}
+window.addEventListener('hashchange', () => { void route(); });
+async function start() {
+  // Keep the previous Static Site URL as an optional entrance to the unified origin.
+  // Protected cookies are issued only by the canonical API/site origin.
+  if (import.meta.env.MODE === 'production' && new URL(__API_BASE_URL__).origin !== location.origin) { location.replace(`${__API_BASE_URL__}/${location.hash}`); return; }
+  try {
+    config = await api('/auth/config');
+    try { me = await api('/me'); } catch (err) { if (!(err instanceof ApiError) || err.status !== 401) throw err; }
+    identity(); await route();
+    try { await script('https://telegram.org/js/telegram-web-app.js'); } catch { /* Public site still works when Telegram is unreachable. */ }
+    if (window.Telegram?.WebApp?.initData && !me) { me = await api('/auth/telegram', { initData: window.Telegram.WebApp.initData }); window.Telegram.WebApp.ready(); window.Telegram.WebApp.expand(); }
+    else if (!me) { void prepareLogin().catch(() => { /* Explicit login button reports configuration errors. */ }); }
+  } catch (err) { toast(errorText(err)); }
+  identity(); await route();
+}
+void start();

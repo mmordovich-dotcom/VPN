@@ -1,0 +1,19 @@
+{
+  "name": "@shared-vps/api",
+  "version": "0.1.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "dev": "tsx watch src/main.ts",
+    "start": "node dist/main.js"
+  },
+  "dependencies": {
+    "fastify": "^5.8.5",
+    "@fastify/cors": "^11.2.0",
+    "@shared-vps/database": "workspace:*",
+    "@shared-vps/runtime": "workspace:*",
+    "@shared-vps/shared": "workspace:*"
+  }
+}

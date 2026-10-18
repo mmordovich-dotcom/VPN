@@ -1,0 +1,316 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  USER
+  ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  BLOCKED
+  ARCHIVED
+}
+
+enum IdentityProvider {
+  TELEGRAM
+  EMAIL
+}
+
+enum OrderStatus {
+  AWAITING_PAYMENT
+  PAID
+  PROCESSING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+  REFUNDED
+}
+
+enum PaymentProvider {
+  TEST
+}
+
+enum ServerProvider {
+  MOCK
+}
+
+enum ServerStatus {
+  PROVISIONING
+  ACTIVE
+  SUSPENDED
+  FAILED
+  TERMINATED
+}
+
+enum SlotStatus {
+  AVAILABLE
+  RESERVED
+  OCCUPIED
+}
+
+enum SubscriptionStatus {
+  PENDING
+  ACTIVE
+  SUSPENDED
+  EXPIRED
+  CANCELLED
+}
+
+enum SettingType {
+  INTEGER
+  BOOLEAN
+  STRING
+  OBJECT
+}
+
+model User {
+  id            String         @id @default(uuid()) @db.Uuid
+  role          UserRole       @default(USER)
+  status        UserStatus     @default(ACTIVE)
+  createdAt     DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
+  identities    UserIdentity[]
+  orders        Order[]
+  subscriptions Subscription[]
+  auditLogs     AuditLog[]
+  sessions Session[]
+  tickets SupportTicket[]
+  botState BotState?
+
+  @@index([status])
+  @@map("users")
+}
+
+model UserIdentity {
+  id             String           @id @default(uuid()) @db.Uuid
+  userId         String           @map("user_id") @db.Uuid
+  provider       IdentityProvider
+  providerUserId String           @map("provider_user_id") @db.VarChar(255)
+  createdAt      DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  user           User             @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@unique([provider, providerUserId])
+  @@index([userId])
+  @@map("user_identities")
+}
+
+model Plan {
+  id                String         @id @default(uuid()) @db.Uuid
+  code              String         @unique @db.VarChar(64)
+  name              String         @db.VarChar(128)
+  price             Int
+  currency          String         @default("RUB") @db.Char(3)
+  durationDays      Int            @map("duration_days")
+  maxUsersPerServer Int            @map("max_users_per_server")
+  isActive          Boolean        @default(true) @map("is_active")
+  createdAt         DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
+  orders            Order[]
+  subscriptions     Subscription[]
+
+  @@index([isActive])
+  @@map("plans")
+}
+
+model Order {
+  operationKey String? @unique @map("operation_key") @db.VarChar(160)
+  renewalId String? @map("renewal_id") @db.Uuid
+  renewal Subscription? @relation("Renewals", fields: [renewalId], references: [id], onDelete: Restrict)
+  periodDays Int @default(30) @map("period_days")
+  attempts Int @default(0)
+  lastError String? @map("last_error") @db.VarChar(64)
+  id           String          @id @default(uuid()) @db.Uuid
+  userId       String          @map("user_id") @db.Uuid
+  planId       String          @map("plan_id") @db.Uuid
+  status       OrderStatus     @default(AWAITING_PAYMENT)
+  amount       Int
+  currency     String          @default("RUB") @db.Char(3)
+  createdAt    DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
+  user         User            @relation(fields: [userId], references: [id], onDelete: Restrict)
+  plan         Plan            @relation(fields: [planId], references: [id], onDelete: Restrict)
+  payments     Payment[]
+  subscription Subscription?
+
+  @@unique([id, userId, planId])
+  @@index([userId, createdAt])
+  @@index([planId])
+  @@index([status, createdAt])
+  @@map("orders")
+}
+
+model Payment {
+  id                String          @id @default(uuid()) @db.Uuid
+  orderId           String          @map("order_id") @db.Uuid
+  provider          PaymentProvider @default(TEST)
+  externalPaymentId String?         @map("external_payment_id") @db.VarChar(255)
+  amount            Int
+  currency          String          @default("RUB") @db.Char(3)
+  status            PaymentStatus   @default(PENDING)
+  createdAt         DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
+  order             Order           @relation(fields: [orderId], references: [id], onDelete: Restrict)
+
+  @@unique([provider, externalPaymentId])
+  @@index([orderId])
+  @@index([status, createdAt])
+  @@map("payments")
+}
+
+model Server {
+  id               String         @id @default(uuid()) @db.Uuid
+  provider         ServerProvider @default(MOCK)
+  externalServerId String?        @map("external_server_id") @db.VarChar(255)
+  status           ServerStatus   @default(PROVISIONING)
+  monthlyCost      Int            @map("monthly_cost")
+  currency         String         @default("RUB") @db.Char(3)
+  capacity         Int
+  rentedAt         DateTime?      @map("rented_at") @db.Timestamptz(3)
+  expiresAt        DateTime?      @map("expires_at") @db.Timestamptz(3)
+  createdAt        DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
+  slots            ServerSlot[]
+
+  @@unique([provider, externalServerId])
+  @@index([status, expiresAt])
+  @@map("servers")
+}
+
+model ServerSlot {
+  id            String         @id @default(uuid()) @db.Uuid
+  serverId      String         @map("server_id") @db.Uuid
+  slotNumber    Int            @map("slot_number")
+  status        SlotStatus     @default(AVAILABLE)
+  createdAt     DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
+  server        Server         @relation(fields: [serverId], references: [id], onDelete: Restrict)
+  subscriptions Subscription[]
+
+  @@unique([serverId, slotNumber])
+  @@index([status, serverId])
+  @@map("server_slots")
+}
+
+model Subscription {
+  id           String             @id @default(uuid()) @db.Uuid
+  userId       String             @map("user_id") @db.Uuid
+  planId       String             @map("plan_id") @db.Uuid
+  orderId      String             @unique @map("order_id") @db.Uuid
+  serverSlotId String?            @map("server_slot_id") @db.Uuid
+  status       SubscriptionStatus @default(PENDING)
+  startedAt    DateTime?          @map("started_at") @db.Timestamptz(3)
+  expiresAt    DateTime?          @map("expires_at") @db.Timestamptz(3)
+  createdAt    DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
+  user         User               @relation(fields: [userId], references: [id], onDelete: Restrict)
+  plan         Plan               @relation(fields: [planId], references: [id], onDelete: Restrict)
+  order        Order              @relation(fields: [orderId, userId, planId], references: [id, userId, planId], onDelete: Restrict)
+  serverSlot   ServerSlot?        @relation(fields: [serverSlotId], references: [id], onDelete: Restrict)
+  credentials  AccessCredential[]
+  renewals Order[] @relation("Renewals")
+
+  @@unique([orderId, userId, planId])
+  @@index([userId, status])
+  @@index([planId])
+  @@index([status, expiresAt])
+  @@index([serverSlotId])
+  @@map("subscriptions")
+}
+
+model AccessCredential {
+  id             String       @id @default(uuid()) @db.Uuid
+  subscriptionId String       @map("subscription_id") @db.Uuid
+  demoIdentifier String       @unique @map("demo_identifier") @db.VarChar(128)
+  metadata       Json         @default("{}")
+  revokedAt      DateTime?    @map("revoked_at") @db.Timestamptz(3)
+  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
+  subscription   Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Restrict)
+
+  @@index([subscriptionId])
+  @@map("access_credentials")
+}
+
+model AuditLog {
+  id          String   @id @default(uuid()) @db.Uuid
+  actorUserId String?  @map("actor_user_id") @db.Uuid
+  action      String   @db.VarChar(128)
+  entityType  String   @map("entity_type") @db.VarChar(64)
+  entityId    String?  @map("entity_id") @db.Uuid
+  metadata    Json     @default("{}")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  actor       User?    @relation(fields: [actorUserId], references: [id], onDelete: Restrict)
+
+  @@index([actorUserId, createdAt])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+model Setting {
+  id        String      @id @default(uuid()) @db.Uuid
+  key       String      @unique @db.VarChar(128)
+  valueType SettingType @map("value_type")
+  value     Json
+  createdAt DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@map("settings")
+}
+
+model Session {
+  tokenHash String @id @map("token_hash") @db.VarChar(64)
+  userId String? @map("user_id") @db.Uuid
+  nonce String? @db.VarChar(64)
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(3)
+  user User? @relation(fields: [userId], references: [id], onDelete: Restrict)
+  @@index([expiresAt])
+  @@map("sessions")
+}
+model AuthReplay {
+  hash String @id @db.VarChar(64)
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(3)
+  @@map("auth_replays")
+}
+model SupportTicket {
+  operationKey String? @unique @map("operation_key") @db.VarChar(160)
+  id String @id @default(uuid()) @db.Uuid
+  number Int @unique @default(autoincrement())
+  userId String @map("user_id") @db.Uuid
+  text String @db.VarChar(4000)
+  status String @default("OPEN") @db.VarChar(32)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+  @@index([userId, createdAt])
+  @@map("support_tickets")
+}
+model BotState {
+  userId String @id @map("user_id") @db.Uuid
+  awaitingSupport Boolean @default(false) @map("awaiting_support")
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+  @@map("bot_states")
+}
+model TelegramUpdate {
+  updatedAt DateTime @updatedAt @default(now()) @map("updated_at") @db.Timestamptz(3)
+  id Int @id
+  payload Json
+  response Json?
+  status String @default("PENDING") @db.VarChar(32)
+  attempts Int @default(0)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  @@index([status, createdAt])
+  @@map("telegram_updates")
+}

@@ -1,0 +1,19 @@
+{
+  "name": "@shared-vps/web",
+  "version": "0.1.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json --noEmit && vite build --mode development",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "dev": "vite --host 127.0.0.1",
+    "preview": "vite preview --host 127.0.0.1",
+    "build:cloud": "tsc -p tsconfig.json --noEmit && vite build --mode production"
+  },
+  "dependencies": {
+    "@shared-vps/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "vite": "^6.4.1"
+  }
+}
