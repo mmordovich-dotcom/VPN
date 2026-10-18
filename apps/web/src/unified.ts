@@ -1,10 +1,11 @@
 import './styles/main.css';
+import { openTelegramLogin } from './telegram-login.js';
 type Plan = { id: string; name: string; price: number; currency: string; durationDays: number; maxUsersPerServer: number; isActive: boolean };
 type Sub = { id: string; userId: string; status: string; plan: Plan; planId: string; startedAt: string | null; expiresAt: string | null; credentials: { demoIdentifier: string; revokedAt: string | null }[]; serverSlot: { server: { externalServerId: string } } | null };
 type Order = { id: string; status: string; amount: number; currency: string; lastError: string | null; payments?: { status: string }[] };
 type Ticket = { id: string; number: number; text: string; status: string };
 type Admin = { stats: Record<string, number>; users: { id: string; role: string; identities: { providerUserId: string }[]; subscriptions: { status: string }[] }[]; servers: { externalServerId: string; expiresAt: string; slots: { slotNumber: number; status: string }[] }[]; orders: Order[]; subscriptions: Sub[]; tickets: Ticket[]; plans: Plan[]; settings: { key: string; value: unknown }[]; listLimit: number };
-declare global { interface Window { Telegram?: { WebApp?: { initData: string; ready(): void; expand(): void }; Login?: { auth(o: { client_id: number; origin: string; redirect_uri: string; nonce: string; scope: string[]; lang: string }, cb: (r: { id_token?: string }) => void): void } } } }
+declare global { interface Window { Telegram?: { WebApp?: { initData: string; ready(): void; expand(): void } } } }
 const $ = <T extends Element = HTMLElement>(s: string) => document.querySelector<T>(s)!;
 const e = (v: unknown) => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 const money = (n: number, currency = 'RUB') => new Intl.NumberFormat('ru-RU', { style: 'currency', currency }).format(n / 100);
@@ -32,15 +33,16 @@ function identity() { $('#identity').textContent = me ? `Telegram · ${me.role =
 async function action(button: HTMLButtonElement, fn: () => Promise<void>) { if (button.disabled) return; button.disabled = true; try { await fn(); } catch (err) { toast(errorText(err)); } finally { button.disabled = false; } }
 $('#login').onclick = () => { void action($<HTMLButtonElement>('#login'), async () => {
   if (me) { await api('/auth/logout', {}); me = null; identity(); await route(); return; }
-  if (!loginChallenge || loginChallenge.until < Date.now() || !window.Telegram?.Login) { await prepareLogin(); toast('Вход подготовлен. Нажмите «Войти через Telegram» ещё раз.'); return; }
+  if (!loginChallenge || loginChallenge.until < Date.now()) { await prepareLogin(); toast('Вход подготовлен. Нажмите «Войти через Telegram» ещё раз.'); return; }
   const c = loginChallenge;
-  window.Telegram!.Login!.auth({ client_id: Number(c.clientId), origin: window.location.origin, redirect_uri: window.location.origin + window.location.pathname, nonce: c.nonce, scope: ['profile'], lang: 'ru' }, r => {
+  const opened = openTelegramLogin(c.clientId, c.nonce, r => {
     if (!r.id_token) { toast('Вход отменён или не подтверждён.'); return; }
     void api<{ id: string; role: string }>('/auth/telegram', { idToken: r.id_token }).then(u => { me = u; identity(); void route(); }).catch(err => toast(errorText(err)));
   });
+  if (!opened) toast('Разрешите всплывающее окно для входа через Telegram и повторите.');
 }); };
 async function prepareLogin() {
-  const [challenge] = await Promise.all([api<{ clientId: string; nonce: string }>('/auth/challenge', {}), window.Telegram?.Login ? Promise.resolve() : script('https://oauth.telegram.org/js/telegram-login.js')]);
+  const challenge = await api<{ clientId: string; nonce: string }>('/auth/challenge', {});
   loginChallenge = { ...challenge, until: Date.now() + 240000 };
 }
 function confirmAction(title: string, text: string, fn: () => Promise<void>) {
