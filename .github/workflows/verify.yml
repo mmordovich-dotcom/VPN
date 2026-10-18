@@ -1,0 +1,51 @@
+name: Verify foundation
+on:
+  push:
+  pull_request:
+  workflow_call:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16.13-alpine
+        env:
+          POSTGRES_USER: demo
+          POSTGRES_PASSWORD: ci_demo_only
+          POSTGRES_DB: shared_vps_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U demo -d shared_vps_test"
+          --health-interval 3s --health-timeout 3s --health-retries 20
+    env:
+      DATABASE_URL: postgresql://demo:ci_demo_only@127.0.0.1:5432/shared_vps_test?schema=public
+      TEST_DATABASE_URL: postgresql://demo:ci_demo_only@127.0.0.1:5432/shared_vps_test?schema=public
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm typecheck
+      - run: pnpm db:validate
+      - run: pnpm test
+      - run: pnpm test:integration
+      - name: Build production web with a non-secret fixture origin
+        run: pnpm build:cloud:web
+        env:
+          VITE_API_BASE_URL: https://api.example.com
+          TELEGRAM_BOT_TOKEN: ci-server-secret-not-for-browser
+          TELEGRAM_WEBHOOK_SECRET: ci-webhook-secret-not-for-browser
+      - name: Inspect compiled browser artifact
+        run: pnpm verify:web-artifact
+        env:
+          TELEGRAM_BOT_TOKEN: ci-server-secret-not-for-browser
+          TELEGRAM_WEBHOOK_SECRET: ci-webhook-secret-not-for-browser
+      - run: pnpm cloud:validate
