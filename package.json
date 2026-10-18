@@ -1,0 +1,54 @@
+{
+  "name": "shared-vps-platform",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.34.4",
+  "engines": {
+    "node": ">=22.12.0 <23",
+    "pnpm": ">=10 <11"
+  },
+  "scripts": {
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck && tsc -p tsconfig.tests.json --noEmit",
+    "dev": "pnpm build && pnpm --parallel --filter @shared-vps/api --filter @shared-vps/web dev",
+    "dev:api": "pnpm --filter @shared-vps/api dev",
+    "dev:web": "pnpm --filter @shared-vps/web dev",
+    "dev:bot": "pnpm --filter @shared-vps/bot dev",
+    "dev:worker": "pnpm --filter @shared-vps/worker dev",
+    "start:api": "pnpm --filter @shared-vps/api start",
+    "start:bot": "pnpm --filter @shared-vps/bot start",
+    "start:worker": "pnpm --filter @shared-vps/worker start",
+    "db:up": "docker compose up -d --wait postgres",
+    "db:stop": "docker compose stop postgres",
+    "db:generate": "pnpm --filter @shared-vps/database db:generate",
+    "db:validate": "pnpm --filter @shared-vps/database db:validate",
+    "db:migrate": "pnpm --filter @shared-vps/database db:migrate",
+    "db:seed": "pnpm --filter @shared-vps/database db:seed",
+    "test": "pnpm build && vitest run --config vitest.config.ts",
+    "test:integration": "pnpm build && vitest run --config vitest.integration.config.ts",
+    "build:cloud:api": "pnpm -r --filter @shared-vps/api... build",
+    "build:cloud:web": "pnpm --filter @shared-vps/shared build && pnpm --filter @shared-vps/web build:cloud",
+    "build:database": "pnpm -r --filter @shared-vps/database... build",
+    "cloud:database": "tsx scripts/cloud-database.ts",
+    "cloud:validate": "tsx scripts/validate-cloud.ts",
+    "build:cloud:unified": "pnpm build:cloud:api && pnpm --filter @shared-vps/web build",
+    "verify:web-artifact": "tsx scripts/verify-web-artifact.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "ajv": "8.17.1",
+    "tsx": "^4.20.6",
+    "typescript": "~5.9.3",
+    "vitest": "^3.2.4",
+    "yaml": "2.8.1"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@prisma/client",
+      "@prisma/engines",
+      "prisma",
+      "esbuild"
+    ]
+  }
+}

@@ -1,0 +1,50 @@
+# Build from the repository root. Set Blueprint Auto Sync = No after creation.
+services:
+  - type: web
+    name: shared-vps-api
+    runtime: node
+    plan: free
+    branch: main
+    buildCommand: corepack enable && pnpm install --frozen-lockfile --prod=false && pnpm build:cloud:unified
+    startCommand: node apps/api/dist/main.js
+    healthCheckPath: /health
+    autoDeployTrigger: checksPass
+    envVars:
+      - key: NODE_VERSION
+        value: 22.22.2
+      - key: NODE_ENV
+        value: production
+      - key: APP_MODE
+        value: demo
+      - key: API_HOST
+        value: 0.0.0.0
+      - key: LOG_LEVEL
+        value: info
+      - key: DATABASE_URL
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+      - key: PUBLIC_ORIGIN
+        sync: false
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_WEBHOOK_SECRET
+        sync: false
+      - key: TELEGRAM_LOGIN_CLIENT_ID
+        sync: false
+      - key: TELEGRAM_BOT_USERNAME
+        sync: false
+      - key: ADMIN_TELEGRAM_IDS
+        sync: false
+  - type: web
+    name: shared-vps-web
+    runtime: static
+    branch: main
+    buildCommand: corepack enable && pnpm install --frozen-lockfile --prod=false && pnpm build:cloud:web
+    staticPublishPath: apps/web/dist
+    autoDeployTrigger: checksPass
+    envVars:
+      - key: NODE_VERSION
+        value: 22.22.2
+      - key: VITE_API_BASE_URL
+        sync: false

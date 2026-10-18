@@ -1,0 +1,56 @@
+# Shared VPS Platform · Stage 1.2 Unified
+
+Продолжение monorepo Stage 1.1.1: Fastify + Prisma + PostgreSQL, Vite/TypeScript,
+единый кнопочный Telegram-бот и сайт с интерфейсом WebDemo. Только демонстрация.
+Деньги не списываются, VPS виртуальные, идентификаторы доступа не работают как VPN.
+
+**Начните с [запуска через браузер](docs/cloud-deployment.md).** Устанавливать Docker
+или Node.js на своём компьютере не нужно. Облако пользователь настраивает в своих
+аккаунтах; архив сам по себе ничего не публикует и не покупает.
+
+Сайт, API и webhook работают на одном адресе существующего Render Web Service.
+Необязательный прежний Static Site перенаправляет на этот адрес. Neon хранит всю
+историю. Тема — единственное состояние в localStorage. Вход — Telegram Login
+(OIDC, RS256) или проверенный Telegram Mini App initData. Пользовательские
+сессии — HttpOnly cookies, в базе хранится только SHA-256 случайного токена.
+
+## Реализовано
+
+- Каталог, покупки, личные подписки, подключение, заказы и поддержка.
+- Заказы и MockPaymentProvider: подтверждение, отказ, отмена, административный возврат.
+- Общий SubscriptionEngine: 3 места на VPS, следующий VPS для четвёртого покупателя,
+  транзакции и PostgreSQL advisory lock, повторяемые операции, восстановление PAID-заказов.
+- Отдельные сроки пользователей и аренды VPS; продление, освобождение и повторное
+  использование мест с сохранением истёкших/отменённых записей.
+- Шесть основных кнопок Telegram, справка и поддержка без обязательного Mini App.
+- Защищённая ADMIN-панель: счётчики, пользователи, серверы/места, заказы,
+  подписки, обращения, тарифы, параметры новых VPS, регистрация webhook.
+- Новая добавочная миграция. Исходная миграция и все её ограничения сохранены.
+
+## Документация
+
+- [Архитектура](docs/architecture.md), [база](docs/database.md).
+- [Telegram](docs/telegram.md), [Mini App и вход](docs/miniapp.md).
+- [Облачный запуск без терминала](docs/cloud-deployment.md).
+- [Проверки и ограничения](docs/verification-stage1.2.md), [изменённые файлы](docs/changes-stage1.2.md), [этапы](docs/stages.md).
+
+## Для разработчика
+
+Node 22.22.2, pnpm 10.34.4. Сохраняются команды `pnpm install --frozen-lockfile`,
+`pnpm db:generate`, `pnpm db:migrate`, `pnpm db:seed`, `pnpm build`, `pnpm typecheck`,
+`pnpm test`, `pnpm test:integration`, `pnpm db:validate`, `pnpm cloud:validate`.
+Тестам нужен локальный PostgreSQL 16.13 и TEST_DATABASE_URL: используются отдельные
+случайные схемы. `pnpm dev` запускает API и Vite с proxy /api; localhost — только разработка.
+`pnpm build:cloud:unified` собирает API и сайт для одного Render Web Service.
+
+Рабочий бот находится в `apps/api/src/telegram.ts` и использует тот же engine,
+что HTTP API. `apps/bot` сохраняет прежние тестируемые модули как совместимый
+фундамент; его отдельный polling-процесс не запускается. `apps/worker` также
+не требуется: восстановление выполняется внутри API при старте и каждые 15 секунд.
+
+## Границы готовности
+
+Локальные результаты перечислены в отчёте проверок. Реальный BotFather/Login,
+Telegram-доставка, Neon, Render и удалённый GitHub Actions в этой сессии не проверялись.
+Free Render засыпает; это не круглосуточный production. Новые платные ресурсы,
+Aeza, реальные платежи и VPN здесь отсутствуют.
