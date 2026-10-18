@@ -4,7 +4,7 @@ type Sub = { id: string; userId: string; status: string; plan: Plan; planId: str
 type Order = { id: string; status: string; amount: number; currency: string; lastError: string | null; payments?: { status: string }[] };
 type Ticket = { id: string; number: number; text: string; status: string };
 type Admin = { stats: Record<string, number>; users: { id: string; role: string; identities: { providerUserId: string }[]; subscriptions: { status: string }[] }[]; servers: { externalServerId: string; expiresAt: string; slots: { slotNumber: number; status: string }[] }[]; orders: Order[]; subscriptions: Sub[]; tickets: Ticket[]; plans: Plan[]; settings: { key: string; value: unknown }[]; listLimit: number };
-declare global { interface Window { Telegram?: { WebApp?: { initData: string; ready(): void; expand(): void }; Login?: { auth(o: { client_id: number; nonce: string; scope: string[]; lang: string }, cb: (r: { id_token?: string }) => void): void } } } }
+declare global { interface Window { Telegram?: { WebApp?: { initData: string; ready(): void; expand(): void }; Login?: { auth(o: { client_id: number; origin: string; redirect_uri: string; nonce: string; scope: string[]; lang: string }, cb: (r: { id_token?: string }) => void): void } } } }
 const $ = <T extends Element = HTMLElement>(s: string) => document.querySelector<T>(s)!;
 const e = (v: unknown) => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 const money = (n: number, currency = 'RUB') => new Intl.NumberFormat('ru-RU', { style: 'currency', currency }).format(n / 100);
@@ -34,7 +34,7 @@ $('#login').onclick = () => { void action($<HTMLButtonElement>('#login'), async 
   if (me) { await api('/auth/logout', {}); me = null; identity(); await route(); return; }
   if (!loginChallenge || loginChallenge.until < Date.now() || !window.Telegram?.Login) { await prepareLogin(); toast('Вход подготовлен. Нажмите «Войти через Telegram» ещё раз.'); return; }
   const c = loginChallenge;
-  window.Telegram!.Login!.auth({ client_id: Number(c.clientId), nonce: c.nonce, scope: ['profile'], lang: 'ru' }, r => {
+  window.Telegram!.Login!.auth({ client_id: Number(c.clientId), origin: window.location.origin, redirect_uri: window.location.origin + window.location.pathname, nonce: c.nonce, scope: ['profile'], lang: 'ru' }, r => {
     if (!r.id_token) { toast('Вход отменён или не подтверждён.'); return; }
     void api<{ id: string; role: string }>('/auth/telegram', { idToken: r.id_token }).then(u => { me = u; identity(); void route(); }).catch(err => toast(errorText(err)));
   });
