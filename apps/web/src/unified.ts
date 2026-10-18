@@ -36,8 +36,9 @@ $('#login').onclick = () => { void action($<HTMLButtonElement>('#login'), async 
   if (!loginChallenge || loginChallenge.until < Date.now()) { await prepareLogin(); toast('Вход подготовлен. Нажмите «Войти через Telegram» ещё раз.'); return; }
   const c = loginChallenge;
   const opened = openTelegramLogin(c.clientId, c.nonce, r => {
-    if (!r.id_token) { toast('Вход отменён или не подтверждён.'); return; }
-    void api<{ id: string; role: string }>('/auth/telegram', { idToken: r.id_token }).then(u => { me = u; identity(); void route(); }).catch(err => toast(errorText(err)));
+    if (!r.id_token) { toast('Telegram не передал ответ сайту. Разрешите всплывающие окна и повторите вход.'); return; }
+    toast('Ответ Telegram получен. Проверяю подпись и создаю сессию…');
+    void api<{ id: string; role: string }>('/auth/telegram', { idToken: r.id_token }).then(u => { me = u; identity(); toast('Вход выполнен.'); void route(); }).catch(err => toast(`Ответ получен, но сервер не принял вход: ${errorText(err)}`));
   });
   if (!opened) toast('Разрешите всплывающее окно для входа через Telegram и повторите.');
 }); };
