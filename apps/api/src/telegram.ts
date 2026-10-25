@@ -48,8 +48,16 @@ export class TelegramGateway {
     // The internal marker is recomputed, never trusted from an incoming JSON field.
     const { loginAction: _untrusted, ...update } = raw as Update;
     const action = loginAction(update.callback_query?.data ?? update.message?.text ?? '');
-    const safe = { ...update, ...(action ? { loginAction: action } : {}),
-      ...(action?.type === 'CLAIM' && update.message ? { message: { ...update.message, text: '/login-request' } } : {}) };
+    const sender = (from: { id: number; is_bot?: boolean }) => ({ id: from.id, ...(from.is_bot === undefined ? {} : { is_bot: from.is_bot }) });
+    const chat = (value: { id: number; type: string }) => ({ id: value.id, type: value.type });
+    // Telegram echoes the original message (including codes/link buttons) in callbacks.
+    // Store only fields needed to process the update, never the echoed credentials.
+    const safe: Update = { update_id: update.update_id, ...(action ? { loginAction: action } : {}),
+      ...(update.message ? { message: { message_id: update.message.message_id, chat: chat(update.message.chat),
+        ...(update.message.from ? { from: sender(update.message.from) } : {}),
+        ...(typeof update.message.text === 'string' ? { text: action?.type === 'CLAIM' ? '/login-request' : update.message.text } : {}) } } : {}),
+      ...(update.callback_query ? { callback_query: { id: update.callback_query.id, ...(typeof update.callback_query.data === 'string' ? { data: update.callback_query.data } : {}), from: sender(update.callback_query.from),
+        ...(update.callback_query.message ? { message: { message_id: update.callback_query.message.message_id, chat: chat(update.callback_query.message.chat) } } : {}) } } : {}) };
     await this.db.telegramUpdate.upsert({ where: { id: update.update_id }, update: {}, create: { id: update.update_id, payload: JSON.parse(JSON.stringify(safe)) as Prisma.InputJsonObject } });
   }
   private async loginReply(action: LoginAction, update: Update, senderId: number, messageId: number): Promise<Reply> {
