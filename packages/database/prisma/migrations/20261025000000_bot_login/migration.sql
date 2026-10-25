@@ -41,4 +41,3 @@ CREATE TABLE "auth_limits" (
   CONSTRAINT "auth_limits_pkey" PRIMARY KEY ("key")
 );
 CREATE INDEX "auth_limits_expires_at_idx" ON "auth_limits"("expires_at");
-
