@@ -24,4 +24,3 @@ export async function buildApp(config: ApiConfig, injectedDb?: ApiDatabase) {
   app.decorate('telegramBootstrap', () => platform.telegram.bootstrap());
   return app;
 }
-

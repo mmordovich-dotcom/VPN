@@ -20,4 +20,3 @@ async function main() {
   catch { await app.close(); throw new Error('API startup failed. Check configured host and port.'); }
 }
 main().catch(error => { console.error(error instanceof Error ? error.message : 'API startup failed'); process.exitCode = 1; });
-
