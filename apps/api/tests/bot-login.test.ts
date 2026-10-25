@@ -29,6 +29,19 @@ describe('verified Telegram login command parsing', () => {
 describe('existing-bot webhook bootstrap', () => {
   const config = readApiConfig({ DATABASE_URL: 'postgresql://demo:demo@127.0.0.1:5432/demo', TELEGRAM_BOT_TOKEN: '123456:fake', TELEGRAM_WEBHOOK_SECRET: 'a'.repeat(40), TELEGRAM_BOT_USERNAME: 'vpnaxon_bot', PUBLIC_ORIGIN: 'https://platform.example' });
   const db = {} as PrismaClient;
+  it('does not persist credentials echoed by Telegram in callback messages', async () => {
+    let stored: unknown;
+    const storage = { telegramUpdate: { upsert: async (value: unknown) => { stored = value; } } } as unknown as PrismaClient;
+    const gateway = new TelegramGateway(storage, config, new SubscriptionEngine(storage));
+    const secret = 'echoed-login-secret-canary';
+    await gateway.accept({ update_id: 1, loginAction: { type: 'CLAIM', tokenHash: secret }, callback_query: {
+      id: 'callback-1', data: 'login:code', from: { id: 1001, first_name: secret },
+      message: { message_id: 2, text: `Code: ${secret}`, chat: { id: 1001, type: 'private', username: secret },
+        reply_markup: { inline_keyboard: [[{ text: 'Login', url: `https://platform.example/#login=${secret}` }]] } },
+    } });
+    expect(JSON.stringify(stored)).not.toContain(secret);
+    expect(stored).toMatchObject({ create: { payload: { loginAction: { type: 'CODE' }, callback_query: { from: { id: 1001 }, message: { message_id: 2, chat: { id: 1001, type: 'private' } } } } } });
+  });
   it('does not replace an unrelated webhook or a mismatched bot', async () => {
     const calls: string[] = [];
     const gateway = new TelegramGateway(db, config, new SubscriptionEngine(db), async method => { calls.push(method); return method === 'getMe' ? { username: 'vpnaxon_bot' } : { url: 'https://another.example/webhook' }; });
