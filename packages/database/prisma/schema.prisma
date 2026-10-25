@@ -356,4 +356,3 @@ model AuthLimit {
   @@index([expiresAt])
   @@map("auth_limits")
 }
-
