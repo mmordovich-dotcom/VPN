@@ -1,4 +1,4 @@
-# Shared VPS Platform · Stage 1.2 Unified
+# Shared VPS Platform · Stage 1.2.5
 
 Продолжение monorepo Stage 1.1.1: Fastify + Prisma + PostgreSQL, Vite/TypeScript,
 единый кнопочный Telegram-бот и сайт с интерфейсом WebDemo. Только демонстрация.
@@ -54,3 +54,4 @@ Node 22.22.2, pnpm 10.34.4. Сохраняются команды `pnpm install 
 Telegram-доставка, Neon, Render и удалённый GitHub Actions в этой сессии не проверялись.
 Free Render засыпает; это не круглосуточный production. Новые платные ресурсы,
 Aeza, реальные платежи и VPN здесь отсутствуют.
+
