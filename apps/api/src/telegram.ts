@@ -2,14 +2,17 @@ import type { PrismaClient, Prisma } from '@shared-vps/database';
 import type { ApiConfig } from '@shared-vps/runtime';
 import { equal } from './auth.js';
 import { DomainError, fail, SubscriptionEngine } from './engine.js';
-type Update = { update_id: number; message?: { message_id: number; text?: string; from?: { id: number; is_bot?: boolean }; chat: { id: number; type: string } }; callback_query?: { id: string; data?: string; from: { id: number; is_bot?: boolean }; message?: { message_id: number; chat: { id: number; type: string } } } };
+import { BotLogin } from './bot-login.js';
+import { loginAction, type LoginAction } from './bot-login-updates.js';
+type Update = { update_id: number; loginAction?: LoginAction; message?: { message_id: number; text?: string; from?: { id: number; is_bot?: boolean }; chat: { id: number; type: string } }; callback_query?: { id: string; data?: string; from: { id: number; is_bot?: boolean }; message?: { message_id: number; chat: { id: number; type: string } } } };
 type Reply = { method: string; body: Record<string, unknown> };
 const buttons = ['🛒 Купить подписку', '👤 Моя подписка', '🔌 Подключиться', '🔄 Продлить подписку', '📖 Инструкции', '💬 Поддержка'];
-export const mainKeyboard = { keyboard: [buttons.slice(0, 2).map(text => ({ text })), buttons.slice(2, 4).map(text => ({ text })), buttons.slice(4).map(text => ({ text }))], resize_keyboard: true };
-const inline = (items: { text: string; callback_data?: string; web_app?: { url: string } }[][]) => ({ inline_keyboard: items });
+export const mainKeyboard = { keyboard: [buttons.slice(0, 2).map(text => ({ text })), buttons.slice(2, 4).map(text => ({ text })), buttons.slice(4).map(text => ({ text })), [{ text: 'Личный кабинет / Войти на сайт' }, { text: 'Получить код входа' }]], resize_keyboard: true };
+const inline = (items: { text: string; callback_data?: string; web_app?: { url: string }; url?: string }[][]) => ({ inline_keyboard: items });
 const back = { text: '← Назад', callback_data: 'menu' };
 export class TelegramGateway {
-  constructor(private db: PrismaClient, private config: ApiConfig, private engine: SubscriptionEngine, private transport?: (method: string, body: Record<string, unknown>) => Promise<unknown>) {}
+  private login: BotLogin;
+  constructor(private db: PrismaClient, private config: ApiConfig, private engine: SubscriptionEngine, private transport?: (method: string, body: Record<string, unknown>) => Promise<unknown>) { this.login = new BotLogin(db, config, engine); }
   authentic(secret: string) { return Boolean(this.config.TELEGRAM_BOT_TOKEN && this.config.TELEGRAM_WEBHOOK_SECRET && equal(secret, this.config.TELEGRAM_WEBHOOK_SECRET)); }
   async call(method: string, body: Record<string, unknown>) {
     if (this.transport) return this.transport(method, body);
@@ -32,14 +35,50 @@ export class TelegramGateway {
     const result = await this.call('getWebhookInfo', {}) as { url?: string; pending_update_count?: number; last_error_date?: number };
     return { url: result.url, pending: result.pending_update_count, lastErrorAt: result.last_error_date ?? null };
   }
+  async bootstrap() {
+    if (!this.login.available() || !this.config.PUBLIC_ORIGIN) return;
+    const bot = await this.call('getMe', {}) as { username?: string };
+    if (bot.username?.toLowerCase() !== this.config.TELEGRAM_BOT_USERNAME?.toLowerCase()) fail(409, 'BOT_USERNAME_MISMATCH');
+    const current = await this.status();
+    if (current.url && current.url !== `${this.config.PUBLIC_ORIGIN}/api/v1/telegram/webhook`) fail(409, 'WEBHOOK_IN_USE');
+    await this.register();
+  }
   async accept(raw: unknown) {
     if (!raw || typeof raw !== 'object' || !Number.isInteger((raw as Update).update_id) || (raw as Update).update_id < 0) fail(400, 'INVALID_UPDATE');
-    const update = raw as Update;
-    await this.db.telegramUpdate.upsert({ where: { id: update.update_id }, update: {}, create: { id: update.update_id, payload: JSON.parse(JSON.stringify(raw)) as Prisma.InputJsonObject } });
+    // The internal marker is recomputed, never trusted from an incoming JSON field.
+    const { loginAction: _untrusted, ...update } = raw as Update;
+    const action = loginAction(update.callback_query?.data ?? update.message?.text ?? '');
+    const safe = { ...update, ...(action ? { loginAction: action } : {}),
+      ...(action?.type === 'CLAIM' && update.message ? { message: { ...update.message, text: '/login-request' } } : {}) };
+    await this.db.telegramUpdate.upsert({ where: { id: update.update_id }, update: {}, create: { id: update.update_id, payload: JSON.parse(JSON.stringify(safe)) as Prisma.InputJsonObject } });
+  }
+  private async loginReply(action: LoginAction, update: Update, senderId: number, messageId: number): Promise<Reply> {
+    let text: string; let markup: object = inline([[back]]);
+    if (action.type === 'CLAIM') {
+      const request = await this.login.claim(action.tokenHash, String(senderId));
+      text = `Подтвердите вход в Shared VPS Platform\n\nСверьте число на сайте: ${request.displayCode}\nПодтверждайте только запрос, который вы сами создали в своём браузере. Не подтверждайте просьбы других людей.`;
+      markup = inline([[{ text: 'Подтвердить вход', callback_data: `login:yes:${request.requestId}` }], [{ text: 'Отменить вход', callback_data: `login:no:${request.requestId}` }]]);
+    } else if (action.type === 'CONFIRM' || action.type === 'CANCEL') {
+      await this.login.confirm(action.requestId, String(senderId), action.type === 'CONFIRM');
+      text = action.type === 'CONFIRM' ? 'Вход подтверждён. Вернитесь в тот же браузер: личный кабинет откроется автоматически.' : 'Вход отменён. Можно создать новый запрос на сайте.';
+    } else if (action.type === 'LINK' || action.type === 'CODE') {
+      const credential = await this.login.issue(String(senderId), action.type, `telegram:${update.update_id}`);
+      if (!credential) text = 'Запрос уже обработан. Для новой ссылки нажмите /login, для нового кода — /code.';
+      else if ('code' in credential) {
+        text = `Код входа: ${credential.code}\nДействует 5 минут, используется один раз. Введите его только на ${this.config.PUBLIC_ORIGIN}. Не пересылайте код и не сообщайте его другим людям. Новый код отменит предыдущий.`;
+        markup = inline([[{ text: 'Получить новый код', callback_data: 'login:code' }], [back]]);
+      } else {
+        text = 'Откройте личный кабинет по одноразовой ссылке в течение 3 минут. На сайте нажмите «Продолжить», затем подтвердите вход здесь, сверив число. Не пересылайте ссылку.';
+        markup = inline([[{ text: 'Открыть личный кабинет', url: credential.url }], [{ text: 'Новая ссылка', callback_data: 'login:link' }], [back]]);
+      }
+    } else text = 'Запрос входа недействителен. Начните вход заново на сайте.';
+    return { method: update.callback_query ? 'editMessageText' : 'sendMessage', body: { chat_id: senderId, ...(update.callback_query ? { message_id: messageId } : {}), text, reply_markup: markup, link_preview_options: { is_disabled: true } } };
   }
   async render(update: Update): Promise<Reply | null> {
     const cb = update.callback_query; const msg = cb?.message ?? update.message; const sender = cb?.from ?? update.message?.from;
-    if (!msg || !sender || sender.is_bot || !Number.isSafeInteger(sender.id) || msg.chat.type !== 'private' || msg.chat.id !== sender.id) return null;
+    if (!msg || !sender || sender.is_bot || !Number.isSafeInteger(sender.id) || sender.id <= 0 || msg.chat.type !== 'private' || msg.chat.id !== sender.id) return null;
+    const authAction = update.loginAction ?? loginAction(cb?.data ?? update.message?.text ?? '');
+    if (authAction) return this.loginReply(authAction, update, sender.id, msg.message_id);
     const user = await this.engine.identity(String(sender.id), this.config.ADMIN_TELEGRAM_IDS);
     const text = cb?.data ?? update.message?.text ?? '';
     let content = ''; let markup: object = mainKeyboard;
@@ -110,7 +149,8 @@ export class TelegramGateway {
             const cb = raw.callback_query; const msg = cb?.message ?? raw.message;
             if (msg) response = { method: cb ? 'editMessageText' : 'sendMessage', body: { chat_id: msg.chat.id, ...(cb ? { message_id: msg.message_id, reply_markup: inline([[back]]) } : { reply_markup: mainKeyboard }), text: `Действие недоступно (${error.code}). Вернитесь в меню. Данные сохранены.` } };
           }
-          if (response) await this.db.telegramUpdate.update({ where: { id: update.id }, data: { response: JSON.parse(JSON.stringify(response)) as Prisma.InputJsonObject } });
+          // Codes and links exist only in this send, never in durable response JSON or logs.
+          if (response && !raw.loginAction && !loginAction(raw.callback_query?.data ?? raw.message?.text ?? '')) await this.db.telegramUpdate.update({ where: { id: update.id }, data: { response: JSON.parse(JSON.stringify(response)) as Prisma.InputJsonObject } });
         }
         if (response) await this.call(response.method, response.body);
         await this.db.telegramUpdate.update({ where: { id: update.id }, data: { status: 'DONE' } });
@@ -118,3 +158,4 @@ export class TelegramGateway {
     }
   }
 }
+

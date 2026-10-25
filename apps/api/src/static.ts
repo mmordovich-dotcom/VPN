@@ -13,7 +13,7 @@ export async function staticRoutes(app: FastifyInstance) {
   app.get('/', async (_req, reply) => {
     const file = await serve('index.html');
     if (!file) return reply.code(503).send({ error: 'Build the web workspace before serving the unified site' });
-    reply.header('x-content-type-options', 'nosniff').header('referrer-policy', 'strict-origin-when-cross-origin').header('cross-origin-opener-policy', 'same-origin-allow-popups');
+    reply.header('cache-control', 'no-store').header('x-content-type-options', 'nosniff').header('referrer-policy', 'no-referrer').header('cross-origin-opener-policy', 'same-origin-allow-popups');
     return reply.type(file.type).send(file.bytes);
   });
   app.get<{ Params: { '*': string } }>('/assets/*', async (req, reply) => {
@@ -22,3 +22,4 @@ export async function staticRoutes(app: FastifyInstance) {
     return reply.header('x-content-type-options', 'nosniff').type(file.type).send(file.bytes);
   });
 }
+
