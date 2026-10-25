@@ -30,8 +30,6 @@ services:
         sync: false
       - key: TELEGRAM_WEBHOOK_SECRET
         sync: false
-      - key: TELEGRAM_LOGIN_CLIENT_ID
-        sync: false
       - key: TELEGRAM_BOT_USERNAME
         sync: false
       - key: ADMIN_TELEGRAM_IDS

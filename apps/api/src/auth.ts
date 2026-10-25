@@ -4,7 +4,7 @@ import type { ApiConfig } from '@shared-vps/runtime';
 import type { PrismaClient } from '@shared-vps/database';
 import { fail, SubscriptionEngine } from './engine.js';
 export const digest = (value: string) => createHash('sha256').update(value).digest('hex');
-export const equal = (a: string, b: string) => a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b));
+export const equal = (a: string, b: string) => { const left = Buffer.from(a); const right = Buffer.from(b); return left.length === right.length && timingSafeEqual(left, right); };
 export function validateInitData(raw: string, token: string, now = Date.now()) {
   if (!token || raw.length > 12000) fail(401, 'INVALID_INIT_DATA');
   const params = new URLSearchParams(raw);
@@ -79,6 +79,8 @@ export class Auth {
       replayHash = digest(body.idToken);
     }
     const user = await this.engine.identity(telegramId, this.config.ADMIN_TELEGRAM_IDS);
+    const current = await this.db.session.findUnique({ where: { tokenHash } });
+    if (current?.userId && current.expiresAt > new Date() && current.userId !== user.id) fail(409, 'AUTH_LOGOUT_FIRST');
     const token = randomBytes(32).toString('base64url');
     try {
       await this.db.$transaction(async tx => {
@@ -90,3 +92,4 @@ export class Auth {
     this.cookie(reply, token); return { id: user.id, role: user.role };
   }
 }
+

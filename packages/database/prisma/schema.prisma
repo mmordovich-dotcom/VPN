@@ -89,6 +89,8 @@ model User {
   sessions Session[]
   tickets SupportTicket[]
   botState BotState?
+  loginRequests LoginRequest[]
+  loginGrants LoginGrant[]
 
   @@index([status])
   @@map("users")
@@ -313,4 +315,44 @@ model TelegramUpdate {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   @@index([status, createdAt])
   @@map("telegram_updates")
+}
+
+model LoginRequest {
+  id String @id @default(uuid()) @db.Uuid
+  tokenHash String @unique @map("token_hash") @db.VarChar(64)
+  browserHash String @map("browser_hash") @db.VarChar(64)
+  displayCode String @map("display_code") @db.VarChar(6)
+  sessionHash String? @map("session_hash") @db.VarChar(64)
+  telegramId String? @map("telegram_id") @db.VarChar(16)
+  userId String? @map("user_id") @db.Uuid
+  status String @default("PENDING") @db.VarChar(16)
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  user User? @relation(fields: [userId], references: [id], onDelete: Restrict)
+  @@index([browserHash, status])
+  @@index([expiresAt])
+  @@map("login_requests")
+}
+
+model LoginGrant {
+  id String @id @default(uuid()) @db.Uuid
+  tokenHash String @unique @map("token_hash") @db.VarChar(64)
+  operationKey String @unique @map("operation_key") @db.VarChar(80)
+  kind String @db.VarChar(8)
+  userId String @map("user_id") @db.Uuid
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(3)
+  consumedAt DateTime? @map("consumed_at") @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+  @@index([userId, kind])
+  @@index([expiresAt])
+  @@map("login_grants")
+}
+
+model AuthLimit {
+  key String @id @db.VarChar(64)
+  attempts Int
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(3)
+  @@index([expiresAt])
+  @@map("auth_limits")
 }

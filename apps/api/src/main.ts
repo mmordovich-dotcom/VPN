@@ -12,7 +12,11 @@ async function main() {
   };
   process.once('SIGINT', () => { void shutdown(); });
   process.once('SIGTERM', () => { void shutdown(); });
-  try { await app.listen({ host: config.API_HOST, port: config.API_PORT }); void (app as unknown as { automation: () => Promise<void> }).automation(); }
+  try {
+    await app.listen({ host: config.API_HOST, port: config.API_PORT });
+    void (app as unknown as { telegramBootstrap: () => Promise<void> }).telegramBootstrap().catch(() => app.log.warn('Telegram webhook setup pending; check configured bot and existing webhook'));
+    void (app as unknown as { automation: () => Promise<void> }).automation();
+  }
   catch { await app.close(); throw new Error('API startup failed. Check configured host and port.'); }
 }
 main().catch(error => { console.error(error instanceof Error ? error.message : 'API startup failed'); process.exitCode = 1; });

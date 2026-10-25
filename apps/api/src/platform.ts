@@ -4,11 +4,14 @@ import type { PrismaClient } from '@shared-vps/database';
 import { Auth, digest } from './auth.js';
 import { DomainError, fail, locked, SubscriptionEngine, subscriptionInclude } from './engine.js';
 import { TelegramGateway } from './telegram.js';
+import { BotLogin } from './bot-login.js';
+import { botLoginRoutes } from './bot-login-routes.js';
 const uuid = { type: 'string', format: 'uuid' } as const;
 const orderBody = { type: 'object', additionalProperties: false, required: ['planId', 'operationKey'], properties: { planId: uuid, operationKey: { type: 'string', minLength: 8, maxLength: 120, pattern: '^[A-Za-z0-9:_-]+$' }, renewalId: uuid } } as const;
 export async function platformRoutes(app: FastifyInstance, db: PrismaClient, config: ApiConfig) {
   const engine = new SubscriptionEngine(db); const auth = new Auth(db, config, engine);
   const telegram = new TelegramGateway(db, config, engine);
+  const botLogin = new BotLogin(db, config, engine);
   // Mutation requests from browsers must prove an exact allowed origin and custom header.
   app.addHook('preHandler', async (req, reply) => {
     reply.header('cache-control', 'no-store');
@@ -16,11 +19,11 @@ export async function platformRoutes(app: FastifyInstance, db: PrismaClient, con
       if (!config.CORS_ORIGINS.includes(String(req.headers.origin)) || req.headers['x-shared-vps'] !== '1') fail(403, 'ORIGIN_REQUIRED');
     }
   });
-  app.get('/api/v1/auth/config', async () => ({ botUsername: config.TELEGRAM_BOT_USERNAME ?? null, loginEnabled: Boolean(config.TELEGRAM_LOGIN_CLIENT_ID), stage: '1.2', demo: true }));
-  app.post('/api/v1/auth/challenge', async (_req, reply) => auth.challenge(reply));
-  app.post<{ Body: { initData?: string; idToken?: string } }>('/api/v1/auth/telegram', { schema: { body: { type: 'object', additionalProperties: false, properties: { initData: { type: 'string', maxLength: 12000 }, idToken: { type: 'string', maxLength: 16000 } } } } }, async (req, reply) => auth.login(req, reply, req.body));
+  app.get('/api/v1/auth/config', async () => ({ botUsername: config.TELEGRAM_BOT_USERNAME ?? null, loginEnabled: botLogin.available(), loginMode: 'bot', stage: '1.2.5', demo: true }));
+  botLoginRoutes(app, botLogin);
+  app.post<{ Body: { initData: string } }>('/api/v1/auth/telegram', { schema: { body: { type: 'object', additionalProperties: false, required: ['initData'], properties: { initData: { type: 'string', maxLength: 12000 } } } } }, async (req, reply) => auth.login(req, reply, req.body));
   app.get('/api/v1/me', async req => { const u = await auth.user(req); return { id: u.id, role: u.role }; });
-  app.post('/api/v1/auth/logout', async (req, reply) => { await db.session.deleteMany({ where: { tokenHash: digest(auth.token(req)) } }); auth.cookie(reply, '', 0); return { ok: true }; });
+  app.post('/api/v1/auth/logout', async (req, reply) => { await db.session.deleteMany({ where: { tokenHash: digest(auth.token(req)) } }); await botLogin.cancelBrowser(req, reply); auth.cookie(reply, '', 0); return { ok: true }; });
   app.get('/api/v1/subscriptions', async req => engine.subscriptions((await auth.user(req)).id));
   app.get('/api/v1/orders', async req => db.order.findMany({ where: { userId: (await auth.user(req)).id }, include: { plan: true, payments: true }, orderBy: { createdAt: 'desc' }, take: 200 }));
   app.post<{ Body: { planId: string; operationKey: string; renewalId?: string } }>('/api/v1/orders', { schema: { body: orderBody } }, async req => engine.order((await auth.user(req)).id, req.body.planId, req.body.operationKey, req.body.renewalId));
@@ -62,9 +65,11 @@ export async function platformRoutes(app: FastifyInstance, db: PrismaClient, con
   app.post('/api/v1/admin/telegram/register', async req => { await auth.user(req, true); return telegram.register(); });
   app.get('/api/v1/admin/telegram/status', async req => { await auth.user(req, true); return telegram.status(); });
   let running: Promise<void> | undefined;
-  const run = () => { if (!running) running = (async () => { try { await engine.tick(); await telegram.drain(); } catch { app.log.warn('Automation temporarily unavailable; persisted work will retry'); } })().finally(() => { running = undefined; }); return running; };
+  let cleanedAt = 0;
+  const run = () => { if (!running) running = (async () => { try { await engine.tick(); await telegram.drain(); if (Date.now() - cleanedAt > 3600000) { await botLogin.cleanup(); cleanedAt = Date.now(); } } catch { app.log.warn('Automation temporarily unavailable; persisted work will retry'); } })().finally(() => { running = undefined; }); return running; };
   const timer = setInterval(() => { void run(); }, 15000).unref();
   app.addHook('onClose', async () => { clearInterval(timer); if (running) await running; });
   // Tests may inject a deliberately limited DB; background work is started by the real entry point.
   return { engine, telegram, run };
 }
+

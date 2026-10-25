@@ -11,7 +11,7 @@ import { healthRoutes } from './routes/health.js';
 import { systemRoutes } from './routes/system.js';
 import { planRoutes } from './modules/plans/routes.js';
 export async function buildApp(config: ApiConfig, injectedDb?: ApiDatabase) {
-  const app = Fastify({ logger: { ...loggerOptions, level: config.LOG_LEVEL }, requestTimeout: 10000, bodyLimit: 65536 });
+  const app = Fastify({ logger: { ...loggerOptions, level: config.LOG_LEVEL, serializers: { req: req => ({ method: req.method, url: String(req.url).split('?')[0] ?? '', hostname: req.hostname, remoteAddress: req.ip }) } }, ajv: { customOptions: { removeAdditional: false } }, requestTimeout: 10000, bodyLimit: 65536 });
   const db = injectedDb ?? createDatabase(config.DATABASE_URL);
   if (!injectedDb) app.addHook('onClose', async () => { await db.$disconnect(); });
   registerErrors(app);
@@ -21,5 +21,6 @@ export async function buildApp(config: ApiConfig, injectedDb?: ApiDatabase) {
   const platform = await platformRoutes(app, db, config);
   await staticRoutes(app);
   app.decorate('automation', platform.run);
+  app.decorate('telegramBootstrap', () => platform.telegram.bootstrap());
   return app;
 }

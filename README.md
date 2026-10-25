@@ -1,4 +1,4 @@
-# Shared VPS Platform · Stage 1.2 Unified
+# Shared VPS Platform · Stage 1.2.5
 
 Продолжение monorepo Stage 1.1.1: Fastify + Prisma + PostgreSQL, Vite/TypeScript,
 единый кнопочный Telegram-бот и сайт с интерфейсом WebDemo. Только демонстрация.
@@ -10,8 +10,10 @@
 
 Сайт, API и webhook работают на одном адресе существующего Render Web Service.
 Необязательный прежний Static Site перенаправляет на этот адрес. Neon хранит всю
-историю. Тема — единственное состояние в localStorage. Вход — Telegram Login
-(OIDC, RS256) или проверенный Telegram Mini App initData. Пользовательские
+историю. Тема — единственное состояние в localStorage. Вход — подтверждение в
+существующем боте, одноразовая ссылка с подтверждением владельцем, восьмизначный
+код или проверенный Telegram Mini App initData. Подробности —
+[Stage 1.2.5](docs/stage-1.2.5.md). Пользовательские
 сессии — HttpOnly cookies, в базе хранится только SHA-256 случайного токена.
 
 ## Реализовано
