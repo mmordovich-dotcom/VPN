@@ -1,5 +1,6 @@
 import './styles/main.css';
-import { openTelegramLogin } from './telegram-login.js';
+import { BotLoginView, takeLoginLink } from './bot-login.js';
+const incomingLoginLink = import.meta.env.MODE === 'production' && new URL(__API_BASE_URL__).origin !== location.origin ? null : takeLoginLink(window.location, window.history);
 type Plan = { id: string; name: string; price: number; currency: string; durationDays: number; maxUsersPerServer: number; isActive: boolean };
 type Sub = { id: string; userId: string; status: string; plan: Plan; planId: string; startedAt: string | null; expiresAt: string | null; credentials: { demoIdentifier: string; revokedAt: string | null }[]; serverSlot: { server: { externalServerId: string } } | null };
 type Order = { id: string; status: string; amount: number; currency: string; lastError: string | null; payments?: { status: string }[] };
@@ -18,34 +19,26 @@ async function api<T>(path: string, body?: unknown): Promise<T> {
   const data = await r.json() as T & { error?: string }; if (!r.ok) throw new ApiError(r.status, data.error ?? 'API_ERROR'); return data;
 }
 const messages: Record<string, string> = { LOGIN_REQUIRED: 'Войдите через Telegram.', ADMIN_REQUIRED: 'Этот раздел доступен только администратору.', USE_RENEWAL: 'У вас уже есть подписка. Выберите продление.', ORDER_IN_PROGRESS: 'Завершите текущий заказ в истории.', LOGIN_NOT_CONFIGURED: 'Telegram Login ещё не настроен администратором.', LOGIN_REPLAY: 'Вход уже использован. Откройте приложение заново.', INVALID_INIT_DATA: 'Срок авторизации истёк. Откройте Mini App заново из Telegram.', INVALID_LOGIN: 'Telegram не подтвердил вход. Повторите авторизацию.', PAYMENT_FINAL: 'Заказ уже обработан. Проверьте историю.', ORIGIN_REQUIRED: 'Откройте сайт по адресу Backend Render из инструкции.' };
+Object.assign(messages, { BOT_LOGIN_NOT_CONFIGURED: 'Вход через бота ещё не подключён администратором.', AUTH_INVALID: 'Код или ссылка недействительны, истекли или уже использованы. Получите новые в боте.', AUTH_REQUEST_UNAVAILABLE: 'Запрос входа недоступен. Начните новый запрос в этом браузере.', AUTH_RATE_LIMITED: 'Слишком много попыток. Подождите 5 минут и запросите новый вход.', AUTH_LOGOUT_FIRST: 'Вы уже вошли в другой аккаунт. Сначала выйдите, затем начните новый вход.', AUTH_UNAVAILABLE: 'Вход временно недоступен. Повторите позже.' });
 const errorText = (err: unknown) => err instanceof ApiError ? messages[err.message] ?? `Действие не выполнено (${err.message}). Проверьте историю заказов.` : 'Сервер временно недоступен или запускается после простоя. Подождите около минуты и повторите. Данные сохраняются.';
 let me: { id: string; role: string } | null = null;
-let config: { botUsername: string | null } = { botUsername: null };
-let loginChallenge: { clientId: string; nonce: string; until: number } | null = null;
+let config: { botUsername: string | null; loginEnabled: boolean } = { botUsername: null, loginEnabled: false };
 let toastTimer: ReturnType<typeof setTimeout>;
 function toast(s: string) { $('#toast').textContent = s; $('#toast').hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => { $('#toast').hidden = true; }, 10000); }
 const nav = [['/', 'Главная'], ['/catalog', 'Каталог'], ['/subscriptions', 'Мои подписки'], ['/connect', 'Подключение'], ['/orders', 'Заказы'], ['/support', 'Поддержка'], ['/admin', 'Админ-панель']];
-$('#app').innerHTML = `<div class="shell"><header><a class="brand" href="#/"><span class="brand-mark">S</span><span>Shared VPS <small>Platform</small></span></a><div class="header-actions"><span class="demo"><i></i> DEMO MODE</span><button id="theme" class="theme-button" aria-label="Переключить тему">◐</button></div></header><nav class="site-nav" aria-label="Разделы">${nav.map(([url, text]) => `<a href="#${url}" data-route="${url}">${text}</a>`).join('')}</nav><div class="demo-toolbar"><span id="identity">Публичный просмотр</span><button class="text-button" id="login">Войти через Telegram</button></div><main id="page" tabindex="-1"></main><footer><span>Shared VPS Platform · Stage 1.2</span><span>Демонстрация. Списание 0 ₽. Доступы не действуют.</span></footer></div><dialog id="dialog" class="dialog" aria-labelledby="dialog-title"><span class="eyebrow">Демонстрационная операция</span><h2 id="dialog-title"></h2><p id="dialog-description"></p><div class="actions"><button class="secondary" id="dialog-cancel">Отмена</button><button class="primary" id="dialog-confirm">Подтвердить</button></div></dialog><div id="toast" class="toast" role="status" hidden></div>`;
+$('#app').innerHTML = `<div class="shell"><header><a class="brand" href="#/"><span class="brand-mark">S</span><span>Shared VPS <small>Platform</small></span></a><div class="header-actions"><span class="demo"><i></i> DEMO MODE</span><button id="theme" class="theme-button" aria-label="Переключить тему">◐</button></div></header><nav class="site-nav" aria-label="Разделы">${nav.map(([url, text]) => `<a href="#${url}" data-route="${url}">${text}</a>`).join('')}</nav><div class="demo-toolbar"><span id="identity">Публичный просмотр</span><button class="text-button" id="login">Войти через Telegram</button></div><main id="page" tabindex="-1"></main><footer><span>Shared VPS Platform · Stage 1.2.5</span><span>Демонстрация. Списание 0 ₽. Доступы не действуют.</span></footer></div><dialog id="dialog" class="dialog" aria-labelledby="dialog-title"><span class="eyebrow">Демонстрационная операция</span><h2 id="dialog-title"></h2><p id="dialog-description"></p><div class="actions"><button class="secondary" id="dialog-cancel">Отмена</button><button class="primary" id="dialog-confirm">Подтвердить</button></div></dialog><div id="toast" class="toast" role="status" hidden></div>`;
 try { document.documentElement.dataset.theme = localStorage.getItem('shared-vps-theme') ?? 'light'; } catch { /* Optional preference. */ }
 $('#theme').onclick = () => { const theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'; document.documentElement.dataset.theme = theme; try { localStorage.setItem('shared-vps-theme', theme); } catch { /* No business data here. */ } };
 async function script(src: string) { await new Promise<void>((resolve, reject) => { const s = document.createElement('script'); const timeout = setTimeout(() => { s.remove(); reject(new Error('Script unavailable')); }, 8000); s.src = src; s.onload = () => { clearTimeout(timeout); resolve(); }; s.onerror = () => { clearTimeout(timeout); reject(new Error('Script unavailable')); }; document.head.append(s); }); }
 function identity() { $('#identity').textContent = me ? `Telegram · ${me.role === 'ADMIN' ? 'Администратор' : 'Личный кабинет'} · ID ${me.id}` : 'Публичный просмотр'; $('#login').textContent = me ? 'Выйти' : 'Войти через Telegram'; }
 async function action(button: HTMLButtonElement, fn: () => Promise<void>) { if (button.disabled) return; button.disabled = true; try { await fn(); } catch (err) { toast(errorText(err)); } finally { button.disabled = false; } }
+const loginView = new BotLoginView(api, () => config.botUsername, () => config.loginEnabled, user => {
+  me = user; identity(); toast('Вход выполнен.'); location.hash = '/subscriptions'; void route();
+}, errorText, incomingLoginLink);
 $('#login').onclick = () => { void action($<HTMLButtonElement>('#login'), async () => {
-  if (me) { await api('/auth/logout', {}); me = null; identity(); await route(); return; }
-  if (!loginChallenge || loginChallenge.until < Date.now()) { await prepareLogin(); toast('Вход подготовлен. Нажмите «Войти через Telegram» ещё раз.'); return; }
-  const c = loginChallenge;
-  const opened = openTelegramLogin(c.clientId, c.nonce, r => {
-    if (!r.id_token) { toast('Telegram не передал ответ сайту. Разрешите всплывающие окна и повторите вход.'); return; }
-    toast('Ответ Telegram получен. Проверяю подпись и создаю сессию…');
-    void api<{ id: string; role: string }>('/auth/telegram', { idToken: r.id_token }).then(u => { me = u; identity(); toast('Вход выполнен.'); void route(); }).catch(err => toast(`Ответ получен, но сервер не принял вход: ${errorText(err)}`));
-  });
-  if (!opened) toast('Разрешите всплывающее окно для входа через Telegram и повторите.');
+  if (me) { await api('/auth/logout', {}); me = null; loginView.reset(); identity(); await route(); return; }
+  location.hash = '/login';
 }); };
-async function prepareLogin() {
-  const challenge = await api<{ clientId: string; nonce: string }>('/auth/challenge', {});
-  loginChallenge = { ...challenge, until: Date.now() + 240000 };
-}
 function confirmAction(title: string, text: string, fn: () => Promise<void>) {
   const dialog = $<HTMLDialogElement>('#dialog'); $('#dialog-title').textContent = title; $('#dialog-description').textContent = text;
   const yes = $<HTMLButtonElement>('#dialog-confirm'); yes.disabled = false; yes.onclick = () => { void action(yes, async () => { await fn(); dialog.close(); await route(); }); };
@@ -58,6 +51,7 @@ const table = (headers: string[], rows: string[][]) => `<div class="table-wrap">
 function ordersTable(orders: Order[], admin = false) { return table(['Заказ', 'Сумма демо', 'Статус', 'Действие'], orders.map(o => [e(o.id), money(o.amount, o.currency), `${e(label(o.status))}${o.lastError ? `<br>${e(o.lastError)}` : ''}`, o.status === 'AWAITING_PAYMENT' && !admin ? `<button class="secondary" data-pay="${o.id}">Подтвердить</button><button class="text-button" data-reject="${o.id}">Отказ</button><button class="text-button" data-order-cancel="${o.id}">Отмена</button>` : admin && o.status === 'PAID' ? `<button class="secondary" data-retry="${o.id}">Повторить активацию</button>` : admin && o.payments?.some(p => p.status === 'SUCCEEDED') ? `<button class="danger" data-refund="${o.id}">Демо-возврат</button>` : '—'])); }
 let generation = 0;
 async function route() {
+  loginView.unmount();
   const current = ++generation; const path = location.hash.slice(1) || '/'; const page = $('#page');
   document.querySelectorAll('[data-route]').forEach(el => el.classList.toggle('active', el.getAttribute('data-route') === path));
   page.innerHTML = '<p class="notice" role="status">Загружаем данные из PostgreSQL…</p>';
@@ -66,7 +60,8 @@ async function route() {
     if (path === '/' || path === '/catalog') {
       const plans = await api<Plan[]>('/plans');
       html = path === '/' ? `<section class="hero"><span class="eyebrow">Одна платформа · Сайт и Telegram</span><h1>Управление<br><span>серверными подписками</span></h1><p class="lead">Общий сервер, индивидуальный срок.<br>Попробуйте весь путь в демонстрационном режиме.</p><div class="actions"><a class="link-primary" href="#/catalog">Выбрать тариф →</a><a class="link-secondary" href="#/subscriptions">Моя подписка</a></div></section><div class="content-grid">${plans[0] ? planCard(plans[0]) : '<p>Нет активных тарифов.</p>'}<article class="panel status-panel"><span class="eyebrow">Как это работает</span><h2>Три пользователя.<br>Один виртуальный VPS.</h2><p>Первый заказ создаёт виртуальный сервер, второй и третий занимают места. Четвёртый начинает следующий сервер.</p><div class="status-row"><span>Общий Backend и PostgreSQL</span><span class="status online">Доступны</span></div><p class="demo-disclaimer">Сайт и Telegram показывают одни данные. Все операции тестовые.</p></article></div>` : heading('Каталог', 'Тарифы поступают с сервера. Деньги не списываются.') + `<div class="cards two">${plans.map(planCard).join('') || '<p>Нет доступных тарифов.</p>'}</div>`;
-    } else if (!me) html = heading('Личный кабинет', 'Безопасный вход через Telegram.') + '<div class="empty-state panel"><h2>Ваш личный кабинет</h2><p>Войдите через Telegram, чтобы увидеть свои подписки, заказы и обращения. Сайт и бот используют один аккаунт.</p></div>';
+    } else if (!me) html = heading('Личный кабинет', 'Безопасный вход через нашего Telegram-бота.') + '<div id="auth-panel"></div>';
+    else if (path === '/login') html = heading('Вы уже вошли', 'Ваш аккаунт и данные сохранены.') + '<div class="panel"><a class="link-primary" href="#/subscriptions">Открыть личный кабинет</a><p>Для смены аккаунта сначала нажмите «Выйти» в верхней панели.</p></div>';
     else if (path === '/subscriptions' || path === '/connect') {
       const subs = await api<Sub[]>('/subscriptions'); html = heading(path === '/connect' ? 'Подключение' : 'Мои подписки', 'Ваши данные и история сохраняются на сервере.') + `<div class="cards two">${subs.map(s => subCard(s, path === '/connect')).join('') || '<div class="panel empty-state"><h2>Пока нет подписок</h2><a href="#/catalog">Открыть каталог →</a></div>'}</div>`;
       if (path === '/connect' && config.botUsername) html += `<p><a class="link-secondary" href="https://t.me/${e(config.botUsername)}">Вернуться в Telegram ↗</a></p>`;
@@ -76,6 +71,7 @@ async function route() {
     } else if (path === '/admin') html = adminPage(await api<Admin>('/admin'));
     else html = heading('Страница не найдена', 'Выберите раздел в навигации.');
     if (current !== generation) return; page.innerHTML = html; bind();
+    const authPanel = document.querySelector<HTMLElement>('#auth-panel'); if (authPanel) loginView.mount(authPanel);
   } catch (err) { if (current === generation) { page.innerHTML = `<div class="empty-state panel"><h2>${err instanceof ApiError && err.status === 403 ? 'Доступ ограничен' : 'Не удалось загрузить данные'}</h2><p>${e(errorText(err))}</p><button id="reload" class="secondary">Повторить</button></div>`; $('#reload').onclick = () => { void route(); }; } }
 }
 function adminPage(a: Admin) {
@@ -109,7 +105,7 @@ function bind() {
   if (status) status.onclick = () => { void action(status, async () => { $('#webhook-result').textContent = JSON.stringify(await api('/admin/telegram/status'), null, 2); }); };
   document.querySelectorAll<HTMLAnchorElement>('.admin-tabs a').forEach(a => a.onclick = ev => { ev.preventDefault(); document.getElementById(a.hash.slice(1))?.scrollIntoView({ behavior: 'smooth' }); });
 }
-window.addEventListener('hashchange', () => { void route(); });
+window.addEventListener('hashchange', () => { const token = takeLoginLink(window.location, window.history); if (token !== null) loginView.receiveLink(token); void route(); });
 async function start() {
   // Keep the previous Static Site URL as an optional entrance to the unified origin.
   // Protected cookies are issued only by the canonical API/site origin.
@@ -120,8 +116,8 @@ async function start() {
     identity(); await route();
     try { await script('https://telegram.org/js/telegram-web-app.js'); } catch { /* Public site still works when Telegram is unreachable. */ }
     if (window.Telegram?.WebApp?.initData && !me) { me = await api('/auth/telegram', { initData: window.Telegram.WebApp.initData }); window.Telegram.WebApp.ready(); window.Telegram.WebApp.expand(); }
-    else if (!me) { void prepareLogin().catch(() => { /* Explicit login button reports configuration errors. */ }); }
   } catch (err) { toast(errorText(err)); }
   identity(); await route();
 }
 void start();
+
