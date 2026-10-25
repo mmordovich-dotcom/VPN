@@ -8,4 +8,3 @@ export const loggerOptions = {
 export function createLogger(service: string, level = 'info') {
   return pino({ ...loggerOptions, level, base: { service } });
 }
-
