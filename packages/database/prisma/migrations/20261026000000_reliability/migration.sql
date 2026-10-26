@@ -54,6 +54,9 @@ ALTER TABLE "telegram_updates"
   ADD COLUMN "last_error" VARCHAR(64);
 CREATE INDEX "telegram_updates_status_next_attempt_at_id_idx" ON "telegram_updates"("status","next_attempt_at","id");
 CREATE INDEX "telegram_updates_status_lease_until_idx" ON "telegram_updates"("status","lease_until");
+-- Expand the existing inbox status check before quarantining legacy or new exhausted sends.
+ALTER TABLE "telegram_updates" DROP CONSTRAINT "telegram_updates_status_valid";
+ALTER TABLE "telegram_updates" ADD CONSTRAINT "telegram_updates_status_valid" CHECK ("status" IN ('PENDING','READY','PROCESSING','DONE','DEAD'));
 -- Old in-flight sends have an uncertain delivery outcome: quarantine rather than resend.
 UPDATE "telegram_updates" SET "lease_until"="updated_at" + interval '2 minutes', "send_started_at"="updated_at" WHERE "status"='PROCESSING';
 UPDATE "telegram_updates" SET "status"='DEAD', "last_error"='ATTEMPTS_EXHAUSTED', "finished_at"=CURRENT_TIMESTAMP WHERE "attempts">=5 AND "status" NOT IN ('DONE','PROCESSING');
