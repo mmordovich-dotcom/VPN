@@ -150,7 +150,7 @@ describe.sequential('Stage 1.2 real PostgreSQL, shared API and Telegram', () => 
     await callback(`confirm:${order.id}`); await callback(`confirm:${order.id}`); expect(await db.subscription.count()).toBe(1); expect(await db.order.count()).toBe(1);
     await callback('subscription'); const s = await db.subscription.findFirstOrThrow(); expect(JSON.stringify(sent.at(-1))).toContain(s.expiresAt!.toISOString().slice(0, 10));
     await callback('connect'); expect(JSON.stringify(sent.at(-1))).toContain('Mini App'); expect(JSON.stringify(sent.at(-1))).toContain('Инструкция в Telegram');
-    await callback(`confirm:${order.id}`, 888); expect(JSON.stringify(sent.at(-1))).toContain('ORDER_NOT_FOUND');
+    await callback(`confirm:${order.id}`, 888); expect(JSON.stringify(sent.at(-1))).toContain('Этот заказ недоступен'); expect(await db.subscription.count()).toBe(1); expect(await db.order.count()).toBe(1);
     await callback('support:new'); await message('Нужна помощь с демонстрационной подпиской'); expect(await db.supportTicket.count()).toBe(1); await callback('support'); expect(JSON.stringify(sent.at(-1))).toContain('№1');
     await gateway.drain(); expect(await db.subscription.count()).toBe(1);
   });
