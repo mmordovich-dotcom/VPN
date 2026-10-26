@@ -60,8 +60,11 @@ export class JobQueue {
     let processed = 0;
     for (; processed < limit && !signal?.aborted; processed++) {
       const job = await this.claim(kinds); if (!job) break;
-      try { const skipped = await handler(job); await this.finish(job, skipped === true); }
-      catch (error) { await this.failed(job, error); }
+      let skipped: boolean | void;
+      try { skipped = await handler(job); }
+      catch (error) { await this.failed(job, error); continue; }
+      // An acknowledgement outage must preserve sendStartedAt, never turn a completed send into a fresh attempt.
+      await this.finish(job, skipped === true);
     }
     return processed;
   }

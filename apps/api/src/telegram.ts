@@ -168,6 +168,7 @@ export class TelegramGateway {
       });
       if (!update) break;
       const owner = { id: update.id, status: 'PROCESSING', leaseToken: update.leaseToken };
+      let deliverySucceeded = false;
       try {
         const raw = update.payload as unknown as Update;
         if (raw.callback_query) { try { await this.call('answerCallbackQuery', { callback_query_id: raw.callback_query.id }); } catch { /* An expired acknowledgement does not block the durable action. */ } }
@@ -190,10 +191,13 @@ export class TelegramGateway {
           const prepared = await this.db.telegramUpdate.updateMany({ where: { ...owner, leaseUntil: { gt: now } }, data: { sendStartedAt: now, leaseUntil: new Date(now.getTime() + 30000) } });
           if (!prepared.count) continue;
           await this.call(response.method, response.body);
+          deliverySucceeded = true;
         }
         const now = await databaseNow(this.db);
         await this.db.telegramUpdate.updateMany({ where: { ...owner, leaseUntil: { gt: now } }, data: { status: 'DONE', finishedAt: now, leaseToken: null, leaseUntil: null, lastError: null } });
       } catch (error) {
+        // Leave a successful send leased if its database acknowledgement fails. Recovery quarantines it.
+        if (deliverySucceeded) throw error;
         const failure = error instanceof TelegramFailure ? error : new TelegramFailure('TELEGRAM_RETRY');
         const now = await databaseNow(this.db);
         const terminal = failure.permanent || failure.ambiguous || update.attempts >= 5;
