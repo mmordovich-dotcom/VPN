@@ -6,45 +6,45 @@ import { DomainError, fail, locked, SubscriptionEngine, subscriptionInclude } fr
 import { TelegramGateway } from './telegram.js';
 import { BotLogin } from './bot-login.js';
 import { botLoginRoutes } from './bot-login-routes.js';
+import { BackgroundRuntime } from './background.js';
+import { reliabilityRoutes,rateLimit } from './reliability-routes.js';
 const uuid = { type: 'string', format: 'uuid' } as const;
 const orderBody = { type: 'object', additionalProperties: false, required: ['planId', 'operationKey'], properties: { planId: uuid, operationKey: { type: 'string', minLength: 8, maxLength: 120, pattern: '^[A-Za-z0-9:_-]+$' }, renewalId: uuid } } as const;
 export async function platformRoutes(app: FastifyInstance, db: PrismaClient, config: ApiConfig) {
-  const engine = new SubscriptionEngine(db); const auth = new Auth(db, config, engine);
-  const telegram = new TelegramGateway(db, config, engine);
+  const runtime = new BackgroundRuntime(db,config,'INLINE',app.log);
+  const engine = runtime.engine; const auth = new Auth(db,config,engine);
+  const telegram = runtime.telegram;
   const botLogin = new BotLogin(db, config, engine);
   // Mutation requests from browsers must prove an exact allowed origin and custom header.
   app.addHook('preHandler', async (req, reply) => {
     reply.header('cache-control', 'no-store');
-    if (req.method !== 'GET' && req.url !== '/api/v1/telegram/webhook') {
+    reply.header('x-request-id',req.id);
+    if (!['GET','HEAD','OPTIONS'].includes(req.method) && req.url !== '/api/v1/telegram/webhook') {
       if (!config.CORS_ORIGINS.includes(String(req.headers.origin)) || req.headers['x-shared-vps'] !== '1') fail(403, 'ORIGIN_REQUIRED');
     }
+    if(req.method==='POST' && /^\/api\/v1\/(orders|subscriptions|support|admin)(?:\/|$)/.test(req.url)){const actor=await auth.user(req,req.url.startsWith('/api/v1/admin'));await rateLimit(db,actor.id,'mutations',30);if(req.url==='/api/v1/support')await rateLimit(db,actor.id,'support',5,3600000);}
   });
-  app.get('/api/v1/auth/config', async () => ({ botUsername: config.TELEGRAM_BOT_USERNAME ?? null, loginEnabled: botLogin.available(), loginMode: 'bot', stage: '1.2.5', demo: true }));
+  reliabilityRoutes(app,db,auth,runtime);
+  app.get('/api/v1/auth/config', async () => ({ botUsername: config.TELEGRAM_BOT_USERNAME ?? null, loginEnabled: botLogin.available(), loginMode: 'bot', stage: '1.3', demo: true }));
   botLoginRoutes(app, botLogin);
   app.post<{ Body: { initData: string } }>('/api/v1/auth/telegram', { schema: { body: { type: 'object', additionalProperties: false, required: ['initData'], properties: { initData: { type: 'string', maxLength: 12000 } } } } }, async (req, reply) => auth.login(req, reply, req.body));
   app.get('/api/v1/me', async req => { const u = await auth.user(req); return { id: u.id, role: u.role }; });
   app.post('/api/v1/auth/logout', async (req, reply) => { await db.session.deleteMany({ where: { tokenHash: digest(auth.token(req)) } }); await botLogin.cancelBrowser(req, reply); auth.cookie(reply, '', 0); return { ok: true }; });
   app.get('/api/v1/subscriptions', async req => engine.subscriptions((await auth.user(req)).id));
-  app.get('/api/v1/orders', async req => db.order.findMany({ where: { userId: (await auth.user(req)).id }, include: { plan: true, payments: true }, orderBy: { createdAt: 'desc' }, take: 200 }));
+  app.get('/api/v1/orders', async req => db.order.findMany({ where: { userId: (await auth.user(req)).id }, include: { plan: true, payments: true }, orderBy: { createdAt: 'desc' }, take: 100 }));
   app.post<{ Body: { planId: string; operationKey: string; renewalId?: string } }>('/api/v1/orders', { schema: { body: orderBody } }, async req => engine.order((await auth.user(req)).id, req.body.planId, req.body.operationKey, req.body.renewalId));
   app.post<{ Params: { id: string }; Body: { event: 'confirm' | 'fail' | 'cancel' } }>('/api/v1/orders/:id/payment', { schema: { params: { type: 'object', required: ['id'], properties: { id: uuid } }, body: { type: 'object', additionalProperties: false, required: ['event'], properties: { event: { enum: ['confirm', 'fail', 'cancel'] } } } } }, async req => engine.payment((await auth.user(req)).id, req.params.id, req.body.event));
   app.post<{ Params: { id: string } }>('/api/v1/subscriptions/:id/cancel', { schema: { params: { type: 'object', required: ['id'], properties: { id: uuid } } } }, async req => engine.cancel((await auth.user(req)).id, req.params.id));
   app.get('/api/v1/support', async req => db.supportTicket.findMany({ where: { userId: (await auth.user(req)).id }, orderBy: { createdAt: 'desc' }, take: 100 }));
   app.post<{ Body: { text: string } }>('/api/v1/support', { schema: { body: { type: 'object', additionalProperties: false, required: ['text'], properties: { text: { type: 'string', minLength: 5, maxLength: 4000 } } } } }, async req => db.supportTicket.create({ data: { userId: (await auth.user(req)).id, text: req.body.text } }));
-  app.get('/api/v1/admin', async req => {
-    await auth.user(req, true); await locked(db, tx => engine.expire(tx));
-    const [users, servers, orders, subscriptions, tickets, plans, settings, rentals] = await Promise.all([
-      db.user.findMany({ include: { identities: { select: { provider: true, providerUserId: true } }, subscriptions: { select: { id: true, status: true } } }, take: 500 }),
-      db.server.findMany({ include: { slots: { include: { subscriptions: { where: { status: { in: ['ACTIVE', 'PENDING', 'SUSPENDED'] } }, select: { id: true, userId: true } } }, orderBy: { slotNumber: 'asc' } } }, take: 500 }),
-      db.order.findMany({ include: { payments: true }, orderBy: { createdAt: 'desc' }, take: 500 }),
-      db.subscription.findMany({ include: subscriptionInclude, orderBy: { createdAt: 'desc' }, take: 500 }),
-      db.supportTicket.findMany({ orderBy: { createdAt: 'desc' }, take: 500 }), db.plan.findMany(), db.setting.findMany(),
-      db.auditLog.findMany({ where: { action: 'demo.server.renewed' }, select: { metadata: true } }),
+  app.get('/api/v1/admin',async req=>{
+    await auth.user(req,true);
+    const [users,active,orders,servers,occupied,available,errors,telegramErrors,revenue,initial,rentals,plans,settings]=await Promise.all([
+      db.user.count(),db.subscription.count({where:{status:'ACTIVE',expiresAt:{gt:new Date()}}}),db.order.count(),db.server.count(),db.serverSlot.count({where:{status:'OCCUPIED'}}),db.serverSlot.count({where:{status:'AVAILABLE'}}),db.order.count({where:{lastError:{not:null}}}),db.telegramUpdate.count({where:{status:'DEAD'}}),db.payment.aggregate({where:{status:'SUCCEEDED'},_sum:{amount:true}}),db.server.aggregate({_sum:{monthlyCost:true}}),
+      db.$queryRaw<{sum:bigint}[]>`SELECT COALESCE(sum(CASE WHEN jsonb_typeof(metadata->'expenseMinor')='number' THEN (metadata->>'expenseMinor')::bigint ELSE 0 END),0)::bigint AS sum FROM audit_logs WHERE action='demo.server.renewed'`,
+      db.plan.findMany({take:100,orderBy:{code:'asc'}}),db.setting.findMany({take:100,orderBy:{key:'asc'}}),
     ]);
-    const [userCount, activeCount, orderCount, serverCount, occupied, available, errors, revenue, initialExpense, telegramErrors] = await Promise.all([
-      db.user.count(), db.subscription.count({ where: { status: 'ACTIVE' } }), db.order.count(), db.server.count(), db.serverSlot.count({ where: { status: 'OCCUPIED' } }), db.serverSlot.count({ where: { status: 'AVAILABLE' } }), db.order.count({ where: { lastError: { not: null } } }), db.payment.aggregate({ where: { status: 'SUCCEEDED' }, _sum: { amount: true } }), db.server.aggregate({ _sum: { monthlyCost: true } }), db.telegramUpdate.count({ where: { status: { not: 'DONE' }, attempts: { gte: 5 } } }),
-    ]);
-    return { demo: true, stats: { users: userCount, active: activeCount, orders: orderCount, servers: serverCount, occupied, available, errors: errors + telegramErrors, revenueMinor: revenue._sum.amount ?? 0, expenseMinor: (initialExpense._sum.monthlyCost ?? 0) + rentals.reduce((sum, r) => sum + Number((r.metadata as Record<string, unknown>).expenseMinor ?? 0), 0) }, users, servers, orders, subscriptions, tickets, plans, settings, listLimit: 500 };
+    return {demo:true,stats:{users,active,orders,servers,occupied,available,errors:errors+telegramErrors,revenueMinor:revenue._sum.amount??0,expenseMinor:(initial._sum.monthlyCost??0)+Number(rentals[0]?.sum??0)},plans,settings};
   });
   app.post<{ Params: { id: string } }>('/api/v1/admin/orders/:id/retry', async req => { await auth.user(req, true); if (!await db.order.count({ where: { id: req.params.id, status: 'PAID' } })) fail(409, 'ORDER_NOT_RETRYABLE'); return engine.fulfill(req.params.id); });
   app.post<{ Params: { id: string } }>('/api/v1/admin/orders/:id/refund', async req => engine.payment((await auth.user(req, true)).id, req.params.id, 'refund', true));
@@ -64,12 +64,7 @@ export async function platformRoutes(app: FastifyInstance, db: PrismaClient, con
   });
   app.post('/api/v1/admin/telegram/register', async req => { await auth.user(req, true); return telegram.register(); });
   app.get('/api/v1/admin/telegram/status', async req => { await auth.user(req, true); return telegram.status(); });
-  let running: Promise<void> | undefined;
-  let cleanedAt = 0;
-  const run = () => { if (!running) running = (async () => { try { await engine.tick(); await telegram.drain(); if (Date.now() - cleanedAt > 3600000) { await botLogin.cleanup(); cleanedAt = Date.now(); } } catch { app.log.warn('Automation temporarily unavailable; persisted work will retry'); } })().finally(() => { running = undefined; }); return running; };
-  const timer = setInterval(() => { void run(); }, 15000).unref();
-  app.addHook('onClose', async () => { clearInterval(timer); if (running) await running; });
-  // Tests may inject a deliberately limited DB; background work is started by the real entry point.
-  return { engine, telegram, run };
+  const run=()=>runtime.run();
+  app.addHook('onClose',()=>runtime.close());
+  return {engine,telegram,run,runtime};
 }
-
