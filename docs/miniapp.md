@@ -1,36 +1,15 @@
-# Mini App и Telegram Login
+# AXON Mini App и вход
 
-Mini App — дополнительная страница `/#/connect`: подписка, демо-доступ,
-инструкция, статус и ссылка возврата в Telegram. У него общие API и PostgreSQL
-с сайтом/ботом. Без действительного входа защищённые данные не показываются.
+Stage 1.4 расширяет прежнюю страницу подключения до общего интерфейса: dashboard, каталог, подписки/продление, подключение, заказы/история, поддержка, уведомления и профиль. Пять мобильных вкладок и вторичные разделы описаны в [stage-1.4.md](stage-1.4.md).
 
-Mini App использует Telegram.WebApp.initData, переданный backend POST-запросом.
-Backend проверяет HMAC-SHA256 по официальной процедуре с ключом WebAppData,
-целостность всех полей (кроме hash), дубли параметров, auth_date (5 минут,
-допуск будущего 30 секунд) и числовую identity пользователя. initDataUnsafe
-не используется как доказательство. Хэш входа одноразовый. Повторный initData
-отклоняется; обычное обновление использует действующую серверную cookie. После
-выхода/истечения cookie Mini App следует открыть заново из Telegram.
+Открытие: существующий @vpnaxon_bot → «Открыть приложение» или /app → inline Mini App. При будущем выпуске bootstrap также задаст native menu button AXON на том же существующем origin. Это изменение бота не выполняется при подготовке PR.
 
-В обычном браузере — актуальная библиотека Telegram Login:
-`https://oauth.telegram.org/js/telegram-login.js`, метод Login.auth, scope profile.
-Сервер выдаёт nonce и привязывает его к временной HttpOnly cookie. Подписанный
-id_token проверяется на сервере по официальному JWKS: RS256, подпись, kid,
-issuer, audience, nonce, iat, exp и числовой Telegram id из profile claim.
-Для этого потока popup SDK Client Secret не нужен и не передаётся браузеру.
-Выбирайте RS256 (по умолчанию) в BotFather. Другие алгоритмы не включены.
-Это не старый iframe Login Widget и не доверие JSON-профилю от клиента.
+mini-app.ts отвечает за тему, отступы, viewport, ready/expand и необязательные native Back/Settings/haptics. Обычный браузер остаётся полноценным сайтом; отсутствие SDK не выдаёт проверенную identity и не отменяет серверный вход.
 
-Сессия живёт 7 дней. Cookie production: __Host-sharedvps, Secure, HttpOnly,
-SameSite=Lax, Path=/, без Domain. Все browser-изменения требуют точного Origin
-из CORS_ORIGINS и заголовка X-Shared-VPS: 1. Logout отзывает серверную сессию.
-ADMIN определяется только users.role в базе. ADMIN_TELEGRAM_IDS может явно
-повысить подтверждённую identity; для отзыва измените роль в базе и уберите ID
-из конфигурации, иначе он снова повысится при Telegram-входе.
+Вход использует прежний POST /api/v1/auth/telegram: подпись/срок/числовая identity проверяются сервером. initDataUnsafe не доверяется. При действующей cookie подпись и соответствие аккаунта всё равно проверяются. Известный LOGIN_REPLAY можно пережить только с действующей сессией; несовпадение требует явной смены аккаунта. Ни initData, ни одноразовые ссылки/коды не сохраняются в бизнес-модели браузера.
 
-Используйте один origin сайта и API. Не размещайте защищённый кабинет напрямую
-на другом onrender.com origin: браузеры ограничивают сторонние cookies.
-Старый Static Site может только перенаправлять на канонический Web Service.
+Внешний браузер использует подтверждение в существующем боте, одноразовую ссылку или восьмизначный код Stage 1.2.5. OAuth popup / Login Widget для основного входа не нужен. Подробности защиты остаются в stage-1.2.5.md.
 
-Источники: [Mini Apps validation](https://core.telegram.org/bots/webapps#validating-data-received-via-the-mini-app),
-[Telegram Login/OIDC](https://core.telegram.org/bots/telegram-login). Проверено 16.10.2026.
+Сохраняются HttpOnly/Secure/SameSite cookies, единый origin, серверные роли и Origin + X-Shared-VPS для изменений. API, PostgreSQL и SubscriptionEngine общие для всех трёх интерфейсов. Миграция и новые env для Stage 1.4 не требуются.
+
+Изолированные browser checks используют собранный Vite frontend и тестовый SDK/API. Настоящие Android/iOS, меню и Telegram-сессия требуют приёмки после согласованного выпуска. Это не production-проверка и не замена серверным integration tests. Справочник: https://core.telegram.org/bots/webapps .

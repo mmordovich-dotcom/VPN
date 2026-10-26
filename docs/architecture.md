@@ -37,3 +37,7 @@ telegram_updates остаётся единственным durable inbox/reply o
 Административные списки отделены от агрегатов: cursor по (createdAt,id), максимум 50 записей, только фиксированные серверные select/filter. Пользовательские списки ограничены владельцем. Диагностика и повтор задач доступны ADMIN; delivery-unknown retry запрещён. Публичные health endpoints не раскрывают очередь, identities и настройки.
 
 Подробности: [очередь и worker](stage-1.3.md), [пагинация](pagination-stage1.3.md), [защита данных](backup-recovery.md), [облачный выпуск](cloud-deployment.md).
+
+## AXON frontend Stage 1.4
+
+unified.ts сохраняет HTTP-действия; axon-ui.ts отвечает за представление и маршруты, mini-app.ts — за необязательный SDK, account-lists.ts — за личные страницы существующих scoped API. Vite/Fastify/Prisma остаются прежними. Схема, SubscriptionEngine, auth.ts, jobs и worker не переписываются. Дизайн и приёмка описаны в stage-1.4.md.
