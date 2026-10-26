@@ -11,7 +11,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   browser:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
@@ -26,7 +26,7 @@ jobs:
         env:
           VITE_API_BASE_URL: http://127.0.0.1:4173
       - name: Install pinned browser test tooling in the ephemeral runner only
-        run: pnpm add -Dw --lockfile=false --no-frozen-lockfile --ignore-scripts @playwright/test@1.56.1
+        run: pnpm add -Dw --lockfile=false --ignore-scripts @playwright/test@1.56.1
       - run: pnpm exec playwright install --with-deps chromium
       - name: Exercise site and simulated Telegram clients without production access
         run: pnpm exec playwright test --config tests/ui/playwright.config.mjs
