@@ -74,9 +74,9 @@ async function noOverflow(page){expect(await page.evaluate(()=>document.document
 test('desktop public AXON, theme and accessible login fallback',async({page})=>{
   const f=await fixtures(page,{logged:false,sdkOffline:true});await ready(page);
   await expect(page.getByRole('heading',{name:/Меньше шума/})).toBeVisible();await noOverflow(page);
-  await page.screenshot({path:'ui-results/desktop-home.png',fullPage:true});
+  await page.screenshot({path:'ui-results/desktop-home.png',fullPage:true,animations:'disabled'});
   await page.getByRole('button',{name:'Переключить тему'}).click();await expect(page.locator('html')).toHaveAttribute('data-theme','light');
-  await page.screenshot({path:'ui-results/desktop-light.png',fullPage:true});
+  await page.screenshot({path:'ui-results/desktop-light.png',fullPage:true,animations:'disabled'});
   await page.getByRole('button',{name:'Войти через Telegram',exact:true}).click();await expect(page.getByRole('button',{name:'Войти по коду',exact:true})).toBeVisible();
   await page.getByRole('button',{name:'Войти по коду',exact:true}).click();await page.getByLabel('8 цифр из бота').fill('12345678');await page.getByRole('button',{name:'Войти',exact:true}).click();
   await expect(page.getByRole('heading',{name:'Ваше пространство.'})).toBeVisible();expect(f.requests.find(x=>x.path==='/auth/code')?.headers['x-shared-vps']).toBe('1');expect(f.errors).toEqual([]);expect(f.unexpected).toEqual([]);
@@ -84,11 +84,11 @@ test('desktop public AXON, theme and accessible login fallback',async({page})=>{
 test('mobile Mini App purchase, renewal, settings and native navigation',async({page})=>{
   await page.setViewportSize({width:390,height:844});const f=await fixtures(page,{logged:false,mini:true,empty:true});await ready(page);
   await expect(page.locator('html')).toHaveAttribute('data-mini-app','true');expect(await page.evaluate(()=>window.__tgCalls)).toEqual(['ready','expand']);
-  await expect(page.getByRole('heading',{name:'Ваше пространство.'})).toBeVisible();await noOverflow(page);await page.screenshot({path:'ui-results/mini-dashboard.png',fullPage:true});
+  await expect(page.getByRole('heading',{name:'Ваше пространство.'})).toBeVisible();await noOverflow(page);await page.screenshot({path:'ui-results/mini-dashboard.png',fullPage:true,animations:'disabled'});
   await page.locator('.bottom-nav').getByRole('link',{name:'Каталог',exact:true}).click();await page.getByRole('button',{name:/Оформить тестовую подписку/}).click();await expect(page.getByRole('dialog')).toBeVisible();await page.getByRole('button',{name:'Подтвердить',exact:true}).click();
   await expect(page.getByRole('heading',{name:'Подписка под контролем.'})).toBeVisible();await page.getByRole('button',{name:/Продлить демо/}).click();await page.getByRole('button',{name:'Подтвердить',exact:true}).click();await expect(page.getByText('60 дней осталось')).toBeVisible();
   const writes=f.requests.filter(x=>x.path==='/orders'&&x.method==='POST');expect(writes).toHaveLength(2);expect(writes[1].body.renewalId).toBeTruthy();expect(writes.every(x=>x.headers['x-shared-vps']==='1')).toBe(true);
-  await page.screenshot({path:'ui-results/mini-subscription.png',fullPage:true});
+  await page.screenshot({path:'ui-results/mini-subscription.png',fullPage:true,animations:'disabled'});
   await page.evaluate(()=>window.__tgSettings());await page.getByRole('checkbox',{name:/Напоминания о подписке/}).check();await page.getByRole('button',{name:'Сохранить настройки'}).click();await expect(page.getByRole('status').filter({hasText:'Настройки уведомлений сохранены.'})).toBeVisible();expect(f.getPreference().remindersEnabled).toBe(true);
   await page.evaluate(()=>window.__tgBack());await expect(page.getByRole('heading',{name:'Ваше пространство.'})).toBeVisible();expect(await page.evaluate(()=>window.__tgBackVisible)).toBe(false);await noOverflow(page);expect(f.errors).toEqual([]);expect(f.unexpected).toEqual([]);
 });
@@ -96,9 +96,10 @@ test('mobile history, search, pagination, support and profile',async({page})=>{
   await page.setViewportSize({width:360,height:780});await page.emulateMedia({reducedMotion:'reduce'});const f=await fixtures(page);await ready(page,'/orders');await expect(page.locator('#account-records .history-card')).toHaveCount(2);await page.getByRole('button',{name:'Далее →',exact:true}).click();await expect(page.locator('#account-page')).toHaveText('Страница 2');expect(f.requests.some(x=>x.query.includes('cursor=fixture-next'))).toBe(true);
   await page.getByRole('textbox',{name:'Поиск',exact:true}).fill('пусто');await page.getByRole('button',{name:'Применить',exact:true}).click();await expect(page.getByRole('heading',{name:'Здесь пока тихо'})).toBeVisible();await noOverflow(page);
   for(const path of ['/profile','/support','/history','/connect','/renew','/instructions','/notifications']){await ready(page,path);await noOverflow(page);}
+  await page.setViewportSize({width:320,height:700});for(const path of ['/profile','/catalog','/connect']){await ready(page,path);await noOverflow(page);}await page.setViewportSize({width:360,height:780});
   await ready(page,'/support');await expect(page.locator('#account-records')).toContainText('<img src=x');expect(await page.evaluate(()=>window.fixtureXss)).toBeUndefined();await expect(page.locator('#account-records img')).toHaveCount(0);
   await page.getByLabel('Чем можем помочь?').fill('Не получается открыть демонстрационное подключение.');await page.getByRole('button',{name:'Отправить обращение'}).click();await expect(page.getByRole('status').filter({hasText:'Обращение №7 сохранено'})).toBeVisible();
-  await ready(page,'/profile');await page.screenshot({path:'ui-results/mobile-profile.png',fullPage:true});await page.getByRole('button',{name:'Выйти из аккаунта'}).click();await expect(page.getByRole('dialog')).toBeVisible();await page.keyboard.press('Escape');await expect(page.getByRole('dialog')).not.toBeVisible();expect(f.requests.some(x=>x.path==='/auth/logout')).toBe(false);expect(f.errors).toEqual([]);expect(f.unexpected).toEqual([]);
+  await ready(page,'/profile');await page.screenshot({path:'ui-results/mobile-profile.png',fullPage:true,animations:'disabled'});await page.getByRole('button',{name:'Выйти из аккаунта'}).click();await expect(page.getByRole('dialog')).toBeVisible();await page.keyboard.press('Escape');await expect(page.getByRole('dialog')).not.toBeVisible();expect(f.requests.some(x=>x.path==='/auth/logout')).toBe(false);expect(f.errors).toEqual([]);expect(f.unexpected).toEqual([]);
 });
 test('Mini App checks an existing cookie account, handles mismatch and accepts a known replay',async({page})=>{
   const f=await fixtures(page,{mini:true,mismatch:true});await ready(page,'/profile');await expect(page.getByRole('heading',{name:'Подключим ваш Telegram.'})).toBeVisible();await expect(page.getByText('ID аккаунта:',{exact:false})).toHaveCount(0);await page.getByRole('button',{name:'Подключить текущий аккаунт'}).click();await page.getByRole('button',{name:'Подтвердить',exact:true}).click();await expect(page.getByRole('heading',{name:'Ваше пространство.'})).toBeVisible();expect(f.requests.filter(x=>x.path==='/auth/telegram')).toHaveLength(2);expect(f.errors).toEqual([]);
@@ -106,7 +107,7 @@ test('Mini App checks an existing cookie account, handles mismatch and accepts a
 });
 test('ADMIN pagination and diagnostics retain guarded operations on a small screen',async({page})=>{
   await page.setViewportSize({width:390,height:844});const f=await fixtures(page,{admin:true});await ready(page,'/admin');await expect(page.getByRole('heading',{name:'Диагностика',exact:true})).toBeVisible();await expect(page.locator('#diagnostics')).toContainText('ready');await noOverflow(page);
-  await page.getByRole('button',{name:'Фоновые задачи',exact:true}).click();await expect(page.locator('#list-records')).toContainText('DELIVERY_UNKNOWN');await expect(page.locator('[data-job-retry]')).toHaveCount(0);await page.screenshot({path:'ui-results/mobile-admin.png',fullPage:true});expect(f.errors).toEqual([]);expect(f.unexpected).toEqual([]);
+  await page.getByRole('button',{name:'Фоновые задачи',exact:true}).click();await expect(page.locator('#list-records')).toContainText('DELIVERY_UNKNOWN');await expect(page.locator('[data-job-retry]')).toHaveCount(0);await page.screenshot({path:'ui-results/mobile-admin.png',fullPage:true,animations:'disabled'});expect(f.errors).toEqual([]);expect(f.unexpected).toEqual([]);
 });
 test('USER cannot open the administrative UI and a slow page cannot overwrite a new route',async({page})=>{
   const f=await fixtures(page);await ready(page,'/admin');await expect(page.getByRole('heading',{name:'Доступ ограничен'})).toBeVisible();expect(f.requests.some(x=>x.path==='/admin')).toBe(false);
