@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { platformRoutes } from './platform.js';
 import { staticRoutes } from './static.js';
 import Fastify from 'fastify';
@@ -11,7 +12,7 @@ import { healthRoutes } from './routes/health.js';
 import { systemRoutes } from './routes/system.js';
 import { planRoutes } from './modules/plans/routes.js';
 export async function buildApp(config: ApiConfig, injectedDb?: ApiDatabase) {
-  const app = Fastify({ logger: { ...loggerOptions, level: config.LOG_LEVEL, serializers: { req: req => ({ method: req.method, url: String(req.url).split('?')[0] ?? '', hostname: req.hostname, remoteAddress: req.ip }) } }, ajv: { customOptions: { removeAdditional: false } }, requestTimeout: 10000, bodyLimit: 65536 });
+  const app = Fastify({ genReqId: () => randomUUID(), logger: { ...loggerOptions, level: config.LOG_LEVEL, serializers: { req: req => ({ method: req.method, url: String(req.url).split('?')[0] ?? '', hostname: req.hostname, remoteAddress: req.ip }) } }, ajv: { customOptions: { removeAdditional: false } }, requestTimeout: 10000, bodyLimit: 65536 });
   const db = injectedDb ?? createDatabase(config.DATABASE_URL);
   if (!injectedDb) app.addHook('onClose', async () => { await db.$disconnect(); });
   registerErrors(app);
@@ -20,7 +21,7 @@ export async function buildApp(config: ApiConfig, injectedDb?: ApiDatabase) {
   await app.register(async routes => { await systemRoutes(routes); await planRoutes(routes, db); }, { prefix: '/api/v1' });
   const platform = await platformRoutes(app, db, config);
   await staticRoutes(app);
-  app.decorate('automation', platform.run);
+  app.decorate('automation', () => { platform.runtime.start(); return platform.run(); });
   app.decorate('telegramBootstrap', () => platform.telegram.bootstrap());
   return app;
 }

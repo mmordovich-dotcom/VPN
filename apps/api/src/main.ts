@@ -7,7 +7,7 @@ async function main() {
   const shutdown = async () => {
     if (closing) return;
     closing = true;
-    const deadline = setTimeout(() => process.exit(1), 10000).unref();
+    const deadline = setTimeout(() => process.exit(1), 25000).unref();
     try { await app.close(); } finally { clearTimeout(deadline); }
   };
   process.once('SIGINT', () => { void shutdown(); });

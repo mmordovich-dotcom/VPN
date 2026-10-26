@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto';
+import { databaseNow, enqueue, JobQueue, JobFailure } from './job-queue.js';
+import { scheduleReminders, notifyOrder, notifySubscription } from './notification-events.js';
 import { Prisma, type PrismaClient } from '@shared-vps/database';
 
 type Tx = Prisma.TransactionClient;
@@ -46,13 +48,15 @@ export class SubscriptionEngine {
     });
   }
   async expire(tx: Tx, now = new Date()) {
-    const expired = await tx.subscription.findMany({ where: { status: { in: ['ACTIVE', 'SUSPENDED'] }, expiresAt: { lte: now } } });
+    const expired = await tx.subscription.findMany({ where: { status: { in: ['ACTIVE', 'SUSPENDED'] }, expiresAt: { lte: now } }, take: 100, orderBy: [{ expiresAt: 'asc' }, { id: 'asc' }] });
     for (const sub of expired) {
       await tx.subscription.update({ where: { id: sub.id }, data: { status: 'EXPIRED' } });
       await tx.accessCredential.updateMany({ where: { subscriptionId: sub.id, revokedAt: null }, data: { revokedAt: now } });
       if (sub.serverSlotId) await tx.serverSlot.update({ where: { id: sub.serverSlotId }, data: { status: 'AVAILABLE' } });
       await audit(tx, null, 'subscription.expired', sub.id);
+      await notifySubscription(tx, 'EXPIRED', { ...sub, status: 'EXPIRED' }, `${sub.id}:${sub.expiresAt!.getTime()}`);
     }
+    return expired.at(-1)?.id ?? null;
   }
   async order(userId: string, planId: string, operationKey: string, renewalId?: string) {
     if (!/^[A-Za-z0-9:_-]{8,120}$/.test(operationKey)) fail(400, 'INVALID_OPERATION_KEY');
@@ -84,7 +88,9 @@ export class SubscriptionEngine {
       const status = new MockPaymentProvider().transition(payment.status, event);
       if (payment.status === status && !(event === 'cancel' && order.status !== 'CANCELLED')) return;
       await tx.payment.update({ where: { id: payment.id }, data: { status } });
-      await tx.order.update({ where: { id: order.id }, data: { status: status === 'SUCCEEDED' ? 'PAID' : event === 'fail' ? 'FAILED' : 'CANCELLED' } });
+      const changed = await tx.order.update({ where: { id: order.id }, data: { status: status === 'SUCCEEDED' ? 'PAID' : event === 'fail' ? 'FAILED' : 'CANCELLED' } });
+      await notifyOrder(tx, changed);
+      if (status === 'SUCCEEDED') await enqueue(tx, 'FULFILL_ORDER', `fulfill:${order.id}`, { orderId: order.id });
       if (event === 'refund') {
         const sub = await tx.subscription.findUnique({ where: { orderId } });
         if (sub) await this.cancelIn(tx, sub.userId, sub.id);
@@ -93,7 +99,7 @@ export class SubscriptionEngine {
           if (renewed.status === 'ACTIVE' && renewed.expiresAt) {
             const expiry = new Date(renewed.expiresAt.getTime() - days(order.periodDays));
             if (expiry <= new Date()) await this.cancelIn(tx, renewed.userId, renewed.id);
-            else await tx.subscription.update({ where: { id: renewed.id }, data: { expiresAt: expiry } });
+            else { const changed = await tx.subscription.update({ where: { id: renewed.id }, data: { expiresAt: expiry } }); await scheduleReminders(tx, changed); }
           }
         }
       }
@@ -140,7 +146,11 @@ export class SubscriptionEngine {
         if (!credential) await tx.accessCredential.create({ data: { subscriptionId: sub.id, demoIdentifier: `demo:access:${randomUUID()}`, metadata: { demonstration: true, functionalKey: false } } });
         await this.extendServer(tx, slotId, expiry);
         await audit(tx, order.userId, order.renewalId ? 'subscription.renewed' : 'subscription.activated', sub.id, { orderId, expiresAt: expiry.toISOString() });
-        return tx.order.update({ where: { id: orderId }, data: { status: 'COMPLETED', lastError: null } });
+        await scheduleReminders(tx, sub);
+        if (order.renewalId) await notifySubscription(tx, 'RENEWED', sub, orderId);
+        const completed = await tx.order.update({ where: { id: orderId }, data: { status: 'COMPLETED', lastError: null } });
+        await notifyOrder(tx, completed);
+        return completed;
       });
     } catch (error) {
       // Persist a safe failure marker, not provider exceptions or secrets. PAID is a durable retry queue.
@@ -173,15 +183,30 @@ export class SubscriptionEngine {
   cancel(userId: string, id: string) { return locked(this.db, tx => this.cancelIn(tx, userId, id)); }
   async subscriptions(userId: string) {
     await locked(this.db, tx => this.expire(tx));
-    return this.db.subscription.findMany({ where: { userId }, include: subscriptionInclude, orderBy: { createdAt: 'desc' } });
+    return this.db.subscription.findMany({ where: { userId }, include: subscriptionInclude, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], take: 100 });
+  }
+  async maintain(cursor?: string, root?: string) {
+    return locked(this.db, async tx => {
+      const now = await databaseNow(tx);
+      const expired = await this.expire(tx, now);
+      const active = await tx.subscription.findMany({ where: { status: 'ACTIVE', ...(cursor ? { id: { gt: cursor } } : {}) }, orderBy:{id:'asc'}, take:100 });
+      for (const sub of active) { if (sub.serverSlotId && sub.expiresAt) await this.extendServer(tx, sub.serverSlotId, sub.expiresAt); await scheduleReminders(tx, sub); }
+      if (root && (active.length === 100 || expired)) {
+        const next = active.length === 100 ? active.at(-1)!.id : cursor;
+        await enqueue(tx,'LIFECYCLE',root+':'+(next??'end')+':'+(expired??'none'),{root,...(next?{cursor:next}:{})});
+      }
+    });
+  }
+  async recover(cursor?: string, root?: string) {
+    await this.db.$transaction(async tx => {
+      const orders = await tx.order.findMany({where:{status:'PAID',...(cursor?{id:{gt:cursor}}:{})},take:100,orderBy:{id:'asc'}});
+      for (const order of orders) await enqueue(tx,'FULFILL_ORDER', 'fulfill:'+order.id,{orderId:order.id});
+      if(root && orders.length===100) await enqueue(tx,'RECOVER',root+':'+orders.at(-1)!.id,{root,cursor:orders.at(-1)!.id});
+    });
   }
   async tick() {
-    await locked(this.db, async tx => {
-      await this.expire(tx);
-      const active = await tx.subscription.findMany({ where: { status: 'ACTIVE' } });
-      for (const sub of active) if (sub.serverSlotId && sub.expiresAt) await this.extendServer(tx, sub.serverSlotId, sub.expiresAt);
-    });
-    const orders = await this.db.order.findMany({ where: { status: 'PAID', attempts: { lt: 5 } }, take: 20, orderBy: { createdAt: 'asc' } });
-    for (const order of orders) { try { await this.fulfill(order.id); } catch { /* Visible in admin; bounded automatic retries. */ } }
+    // Compatibility entry point: same persisted queue as both production worker modes.
+    await this.maintain(); await this.recover();
+    await new JobQueue(this.db).drain(async job => { const body=job.payload as Record<string,unknown>; if(typeof body.orderId!=='string')throw new JobFailure('INVALID_ORDER_JOB',true); await this.fulfill(body.orderId); },undefined,20,['FULFILL_ORDER']);
   }
 }

@@ -1,0 +1,46 @@
+# Изменённые файлы Stage 1.3
+
+Сравнение с опубликованным ed0b033056c937cbfe66daf4e13a173cd130ac83. Прежние три Prisma migrations и GitHub workflows не изменены. Секреты, .env, сборки и node_modules не публикуются.
+
+- `.env.example` — изменён
+- `apps/api/package.json` — изменён
+- `apps/api/src/app.ts` — изменён
+- `apps/api/src/background.ts` — новый
+- `apps/api/src/engine.ts` — изменён
+- `apps/api/src/job-queue.ts` — новый
+- `apps/api/src/main.ts` — изменён
+- `apps/api/src/notification-events.ts` — новый
+- `apps/api/src/notifications.ts` — новый
+- `apps/api/src/pagination.ts` — новый
+- `apps/api/src/platform.ts` — изменён
+- `apps/api/src/plugins/errors.ts` — изменён
+- `apps/api/src/reliability-routes.ts` — новый
+- `apps/api/src/telegram-errors.ts` — новый
+- `apps/api/src/telegram.ts` — изменён
+- `apps/api/tests/reliability.test.ts` — новый
+- `apps/web/index.html` — изменён
+- `apps/web/src/admin-lists.ts` — новый
+- `apps/web/src/styles/main.css` — изменён
+- `apps/web/src/unified.ts` — изменён
+- `apps/worker/package.json` — изменён
+- `apps/worker/src/main.ts` — изменён
+- `docs/architecture.md` — изменён
+- `docs/backup-recovery.md` — новый
+- `docs/cloud-deployment.md` — изменён
+- `docs/pagination-stage1.3.md` — новый
+- `docs/stage-1.3.md` — новый
+- `docs/stages.md` — изменён
+- `package.json` — изменён
+- `packages/database/prisma/migrations/20261026000000_reliability/migration.sql` — новый
+- `packages/database/prisma/schema.prisma` — изменён
+- `packages/database/src/index.ts` — изменён
+- `packages/database/tests/reliability.integration.test.ts` — новый
+- `packages/database/tests/unified.integration.test.ts` — изменён
+- `packages/runtime/src/env.ts` — изменён
+- `packages/runtime/src/logger.ts` — изменён
+- `packages/runtime/tests/logger.test.ts` — изменён
+- `pnpm-lock.yaml` — изменён
+- `README.md` — изменён
+- `render.yaml` — изменён
+- `docs/changes-stage1.3.md` — этот список.
+- `docs/verification-stage1.3.md` — результаты и ограничения.

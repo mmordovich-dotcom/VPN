@@ -164,6 +164,9 @@ describe.sequential('Stage 1.2 real PostgreSQL, shared API and Telegram', () => 
     const failed = new TelegramGateway(db, config(), engine, async method => { if (method === 'editMessageText') throw new Error('transport offline'); return {}; });
     await failed.accept(update); await failed.drain(); expect(await db.subscription.count()).toBe(1);
     expect(await db.telegramUpdate.findUniqueOrThrow({ where: { id: 91 } })).toMatchObject({ status: 'PENDING', attempts: 1 });
+    expect((await db.telegramUpdate.findUniqueOrThrow({where:{id:91}})).nextAttemptAt.getTime()).toBeGreaterThan(Date.now()-100);
+    // Deterministically advance the persisted retry deadline instead of sleeping in CI.
+    await db.telegramUpdate.update({where:{id:91},data:{nextAttemptAt:new Date(0)}});
     const replies: unknown[] = []; const restarted = new TelegramGateway(db, config(), new SubscriptionEngine(db), async (_method, body) => { replies.push(body); return {}; });
     await restarted.accept(update); await restarted.drain(); await restarted.drain(); expect(await db.subscription.count()).toBe(1); expect(await db.server.count()).toBe(1);
     expect(await db.telegramUpdate.findUniqueOrThrow({ where: { id: 91 } })).toMatchObject({ status: 'DONE', attempts: 2 });

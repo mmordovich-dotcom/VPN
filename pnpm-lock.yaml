@@ -69,6 +69,9 @@ importers:
 
   apps/worker:
     dependencies:
+      '@shared-vps/api':
+        specifier: workspace:*
+        version: link:../api
       '@shared-vps/database':
         specifier: workspace:*
         version: link:../../packages/database

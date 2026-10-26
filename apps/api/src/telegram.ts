@@ -1,3 +1,6 @@
+import { randomUUID } from 'node:crypto';
+import { backoff, databaseNow } from './job-queue.js';
+import { TelegramFailure, telegramFailure } from './telegram-errors.js';
 import type { PrismaClient, Prisma } from '@shared-vps/database';
 import type { ApiConfig } from '@shared-vps/runtime';
 import { equal } from './auth.js';
@@ -17,11 +20,13 @@ export class TelegramGateway {
   async call(method: string, body: Record<string, unknown>) {
     if (this.transport) return this.transport(method, body);
     if (!this.config.TELEGRAM_BOT_TOKEN) return fail(503, 'BOT_NOT_CONFIGURED');
-    const result = await fetch(`https://api.telegram.org/bot${this.config.TELEGRAM_BOT_TOKEN}/${method}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(8000) });
-    const data = await result.json() as { ok: boolean; result?: unknown; description?: string };
+    let result: Response;
+    try { result = await fetch(`https://api.telegram.org/bot${this.config.TELEGRAM_BOT_TOKEN}/${method}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(8000) }); } catch { throw new TelegramFailure(method === 'sendMessage' || method === 'editMessageText' ? 'TELEGRAM_DELIVERY_UNKNOWN' : 'TELEGRAM_RETRY'); }
+    let data: { ok: boolean; result?: unknown; description?: string; error_code?: number; parameters?: { retry_after?: number } };
+    try { data = await result.json() as typeof data; } catch { throw new TelegramFailure('TELEGRAM_DELIVERY_UNKNOWN'); }
     if (!result.ok || !data.ok) {
       if (method === 'editMessageText' && data.description?.includes('message is not modified')) return {};
-      return fail(503, 'TELEGRAM_UNAVAILABLE');
+      throw telegramFailure(data.error_code ?? result.status, data.parameters?.retry_after);
     }
     return data.result;
   }
@@ -58,7 +63,7 @@ export class TelegramGateway {
         ...(typeof update.message.text === 'string' ? { text: action?.type === 'CLAIM' ? '/login-request' : update.message.text } : {}) } } : {}),
       ...(update.callback_query ? { callback_query: { id: update.callback_query.id, ...(typeof update.callback_query.data === 'string' ? { data: update.callback_query.data } : {}), from: sender(update.callback_query.from),
         ...(update.callback_query.message ? { message: { message_id: update.callback_query.message.message_id, chat: chat(update.callback_query.message.chat) } } : {}) } } : {}) };
-    await this.db.telegramUpdate.upsert({ where: { id: update.update_id }, update: {}, create: { id: update.update_id, payload: JSON.parse(JSON.stringify(safe)) as Prisma.InputJsonObject } });
+    await this.db.telegramUpdate.upsert({ where: { id: update.update_id }, update: { id:update.update_id }, create: { id: update.update_id, payload: JSON.parse(JSON.stringify(safe)) as Prisma.InputJsonObject } });
   }
   private async loginReply(action: LoginAction, update: Update, senderId: number, messageId: number): Promise<Reply> {
     let text: string; let markup: object = inline([[back]]);
@@ -93,7 +98,13 @@ export class TelegramGateway {
     const subscriptions = await this.engine.subscriptions(user.id);
     const active = subscriptions.find(s => s.status === 'ACTIVE');
     const last = active ?? subscriptions[0];
-    if (text.startsWith('/start') || text === 'menu') content = 'Shared VPS Platform · ДЕМОНСТРАЦИЯ\nПокупки, серверы и доступы тестовые. Реальные деньги не списываются. Выберите действие:';
+    if (text === '/notifications' || text === 'notifications' || /^notify:(reminders|updates):(on|off)$/.test(text)) {
+      const match = /^notify:(reminders|updates):(on|off)$/.exec(text);
+      const data = match ? { [match[1] === 'reminders' ? 'remindersEnabled' : 'updatesEnabled']: match[2] === 'on', telegramBlocked: false } : {};
+      const preference = await this.db.notificationPreference.upsert({ where: { userId:user.id }, update:data, create:{userId:user.id,...data} });
+      content = 'Уведомления\nНапоминания о сроке: ' + (preference.remindersEnabled ? 'включены' : 'выключены') + '\nСтатусы заказов и продления: ' + (preference.updatesEnabled ? 'включены' : 'выключены') + '\nИзменения не влияют на ответы бота и вход на сайт.';
+      markup = inline([[{text:preference.remindersEnabled ? 'Выключить напоминания' : 'Включить напоминания',callback_data:'notify:reminders:'+(preference.remindersEnabled?'off':'on')}],[{text:preference.updatesEnabled ? 'Выключить статусы' : 'Включить статусы',callback_data:'notify:updates:'+(preference.updatesEnabled?'off':'on')}],[back]]);
+    } else if (text.startsWith('/start') || text === 'menu') content = 'Shared VPS Platform · ДЕМОНСТРАЦИЯ\nПокупки, серверы и доступы тестовые. Реальные деньги не списываются. Выберите действие:';
     else if (text === buttons[0] || text === 'buy' || text === buttons[3] || text === 'renew') {
       const renewal = text === buttons[3] || text === 'renew';
       const plan = renewal && last ? last.plan : await this.db.plan.findFirst({ where: { isActive: true }, orderBy: { code: 'asc' } });
@@ -112,7 +123,7 @@ export class TelegramGateway {
       else { const result = await this.engine.payment(user.id, id, text.startsWith('confirm:') ? 'confirm' : 'cancel'); content = `Тестовый заказ: ${result.status}\n${result.status === 'COMPLETED' ? 'Подписка активирована. Все данные сохранены в PostgreSQL.' : 'Деньги не списывались.'}`; markup = inline([[{ text: 'Моя подписка', callback_data: 'subscription' }], [back]]); }
     } else if (text === buttons[1] || text === 'subscription') {
       content = last ? `${last.plan.name} · ${last.status}\nНачало: ${last.startedAt?.toISOString().slice(0, 10) ?? '—'}\nОкончание: ${last.expiresAt?.toISOString().slice(0, 10) ?? '—'}\nОсталось: ${Math.max(0, Math.ceil(((last.expiresAt?.getTime() ?? 0) - Date.now()) / 86400000))} дней\nВиртуальный VPS: ${last.serverSlot?.server.externalServerId ?? '—'}\nДемо-доступ: ${last.status === 'ACTIVE' ? last.credentials.find(c => !c.revokedAt)?.demoIdentifier ?? '—' : 'неактивен'}\nЭто не VPN-ключ.` : 'У вас пока нет подписок.';
-      markup = inline([[{ text: 'Продлить', callback_data: 'renew' }, { text: 'Подключиться', callback_data: 'connect' }], [back]]);
+      markup = inline([[{ text: 'Продлить', callback_data: 'renew' }, { text: 'Подключиться', callback_data: 'connect' }], [{ text: 'Уведомления', callback_data: 'notifications' }], [back]]);
     } else if (text === buttons[2] || text === 'connect') {
       content = 'Подключение в демо\n1. Проверьте активную подписку.\n2. Откройте её демонстрационный идентификатор.\n3. Настройка реального устройства не требуется: действующих VPN-ключей здесь нет.\nВыберите удобный способ:';
       markup = inline([[{ text: 'Инструкция в Telegram', callback_data: 'subscription' }], ...(this.config.PUBLIC_ORIGIN ? [[{ text: 'Открыть Mini App', web_app: { url: `${this.config.PUBLIC_ORIGIN}/#/connect` } }]] : []), [back]]);
@@ -139,16 +150,28 @@ export class TelegramGateway {
     if (text.startsWith('/start') || text === 'menu') await this.db.botState.upsert({ where: { userId: user.id }, update: { awaitingSupport: false }, create: { userId: user.id } });
     return { method: cb ? 'editMessageText' : 'sendMessage', body: { chat_id: sender.id, ...(cb ? { message_id: msg.message_id } : {}), text: content, reply_markup: cb && markup === mainKeyboard ? inline(buttons.map((title, i) => [{ text: title, callback_data: ['buy', 'subscription', 'connect', 'renew', 'help', 'support'][i]! }])) : markup } };
   }
-  async drain() {
+  async drain(signal?: AbortSignal) {
     if (!this.config.TELEGRAM_BOT_TOKEN && !this.transport) return;
-    const pending = await this.db.telegramUpdate.findMany({ where: { status: { not: 'DONE' }, attempts: { lt: 5 } }, orderBy: { id: 'asc' }, take: 10 });
-    for (const update of pending) {
-      // A lease survives process crashes. A second replica can reclaim it after two minutes.
-      const claimed = await this.db.telegramUpdate.updateMany({ where: { id: update.id, OR: [{ status: { in: ['PENDING', 'READY'] } }, { status: 'PROCESSING', updatedAt: { lt: new Date(Date.now() - 120000) } }] }, data: { status: 'PROCESSING', attempts: { increment: 1 } } });
-      if (!claimed.count) continue;
+    for (let index = 0; index < 10 && !signal?.aborted; index++) {
+      const update = await this.db.$transaction(async tx => {
+        const now = await databaseNow(tx);
+        const rows = await tx.$queryRaw<{ id: number }[]>`SELECT id FROM telegram_updates
+          WHERE (status IN ('PENDING','READY') AND next_attempt_at <= ${now})
+          OR (status='PROCESSING' AND COALESCE(lease_until, updated_at + interval '2 minutes') <= ${now})
+          ORDER BY next_attempt_at, id FOR UPDATE SKIP LOCKED LIMIT 1`;
+        if (!rows[0]) return null;
+        const prior = await tx.telegramUpdate.findUniqueOrThrow({ where: { id: rows[0].id } });
+        if (prior.attempts >= 5 || prior.status === 'PROCESSING' && prior.sendStartedAt) {
+          await tx.telegramUpdate.update({ where: { id: prior.id }, data: { status: 'DEAD', lastError: prior.sendStartedAt ? 'DELIVERY_UNKNOWN' : 'ATTEMPTS_EXHAUSTED', finishedAt: now, leaseToken: null, leaseUntil: null } }); return null;
+        }
+        return tx.telegramUpdate.update({ where: { id: prior.id }, data: { status: 'PROCESSING', attempts: { increment: 1 }, leaseToken: randomUUID(), leaseUntil: new Date(now.getTime() + 60000) } });
+      });
+      if (!update) break;
+      const owner = { id: update.id, status: 'PROCESSING', leaseToken: update.leaseToken };
+      let deliverySucceeded = false;
       try {
         const raw = update.payload as unknown as Update;
-        if (raw.callback_query) { try { await this.call('answerCallbackQuery', { callback_query_id: raw.callback_query.id }); } catch { /* Old callback acknowledgement does not block a durable operation. */ } }
+        if (raw.callback_query) { try { await this.call('answerCallbackQuery', { callback_query_id: raw.callback_query.id }); } catch { /* An expired acknowledgement does not block the durable action. */ } }
         let response = update.response as unknown as Reply | null;
         if (!response) {
           try { response = await this.render(raw); }
@@ -157,13 +180,34 @@ export class TelegramGateway {
             const cb = raw.callback_query; const msg = cb?.message ?? raw.message;
             if (msg) response = { method: cb ? 'editMessageText' : 'sendMessage', body: { chat_id: msg.chat.id, ...(cb ? { message_id: msg.message_id, reply_markup: inline([[back]]) } : { reply_markup: mainKeyboard }), text: `Действие недоступно (${error.code}). Вернитесь в меню. Данные сохранены.` } };
           }
-          // Codes and links exist only in this send, never in durable response JSON or logs.
-          if (response && !raw.loginAction && !loginAction(raw.callback_query?.data ?? raw.message?.text ?? '')) await this.db.telegramUpdate.update({ where: { id: update.id }, data: { response: JSON.parse(JSON.stringify(response)) as Prisma.InputJsonObject } });
+          if (response && !raw.loginAction && !loginAction(raw.callback_query?.data ?? raw.message?.text ?? '')) {
+            const now = await databaseNow(this.db);
+            const saved = await this.db.telegramUpdate.updateMany({ where: { ...owner, leaseUntil: { gt: now } }, data: { response: JSON.parse(JSON.stringify(response)) as Prisma.InputJsonObject } });
+            if (!saved.count) continue;
+          }
         }
-        if (response) await this.call(response.method, response.body);
-        await this.db.telegramUpdate.update({ where: { id: update.id }, data: { status: 'DONE' } });
-      } catch { await this.db.telegramUpdate.update({ where: { id: update.id }, data: { status: 'PENDING' } }); }
+        if (response) {
+          const now = await databaseNow(this.db);
+          const prepared = await this.db.telegramUpdate.updateMany({ where: { ...owner, leaseUntil: { gt: now } }, data: { sendStartedAt: now, leaseUntil: new Date(now.getTime() + 30000) } });
+          if (!prepared.count) continue;
+          await this.call(response.method, response.body);
+          deliverySucceeded = true;
+        }
+        const now = await databaseNow(this.db);
+        await this.db.telegramUpdate.updateMany({ where: { ...owner, leaseUntil: { gt: now } }, data: { status: 'DONE', finishedAt: now, leaseToken: null, leaseUntil: null, lastError: null } });
+      } catch (error) {
+        // Leave a successful send leased if its database acknowledgement fails. Recovery quarantines it.
+        if (deliverySucceeded) throw error;
+        const failure = error instanceof TelegramFailure ? error : new TelegramFailure('TELEGRAM_RETRY');
+        const now = await databaseNow(this.db);
+        const terminal = failure.permanent || failure.ambiguous || update.attempts >= 5;
+        await this.db.telegramUpdate.updateMany({ where: { ...owner, leaseUntil: { gt: now } }, data: { status: terminal ? 'DEAD' : 'PENDING', lastError: failure.code, finishedAt: terminal ? now : null, nextAttemptAt: new Date(now.getTime() + backoff(update.attempts, failure.retryAfterMs)), leaseToken: null, leaseUntil: null, ...(!failure.ambiguous ? { sendStartedAt: null } : {}) } });
+        if (failure.code === 'TELEGRAM_BLOCKED') {
+          const raw = update.payload as unknown as Update;
+          const sender = raw.callback_query?.from ?? raw.message?.from;
+          if (sender) await this.db.notificationPreference.updateMany({ where: { user: { identities: { some: { provider: 'TELEGRAM', providerUserId: String(sender.id) } } } }, data: { telegramBlocked: true } });
+        }
+      }
     }
   }
 }
-

@@ -1,20 +1,19 @@
 import { createDatabase } from '@shared-vps/database';
-import { createLogger, readDatabaseConfig } from '@shared-vps/runtime';
-import { runTasks } from './runner.js';
+import { createLogger, readApiConfig } from '@shared-vps/runtime';
+import { BackgroundRuntime } from '@shared-vps/api/background';
 const log = createLogger('worker');
 async function main() {
-  const config = readDatabaseConfig();
-  log.level = config.LOG_LEVEL;
+  const config = readApiConfig(); log.level = config.LOG_LEVEL;
   const db = createDatabase(config.DATABASE_URL);
-  const controller = new AbortController();
-  const stop = () => controller.abort();
-  process.once('SIGINT', stop);
-  process.once('SIGTERM', stop);
-  try {
-    await db.$connect();
-    await db.$queryRaw`SELECT 1`;
-    await runTasks([], controller.signal);
-    log.info('Database connected. Stage 1.2 recovery runs inside the API service; standalone legacy worker finished.');
-  } finally { await db.$disconnect(); process.removeListener('SIGINT', stop); process.removeListener('SIGTERM', stop); }
+  const runtime = new BackgroundRuntime(db,config,'STANDALONE',log);
+  let closing = false;
+  const stop = async () => {
+    if(closing)return;closing=true;
+    const deadline=setTimeout(()=>process.exit(1),25000).unref();
+    try{await runtime.close();await db.$disconnect();}finally{clearTimeout(deadline);}
+  };
+  process.once('SIGINT',()=>{void stop();});process.once('SIGTERM',()=>{void stop();});
+  await db.$connect(); runtime.start();
+  log.info({mode:'STANDALONE'},'Durable worker started; no Telegram polling process is created');
 }
-main().catch(() => { log.error('Worker startup failed. Check DATABASE_URL and PostgreSQL.'); process.exitCode = 1; });
+main().catch(()=>{log.error({category:'worker-startup'},'Worker startup failed; check protected configuration');process.exitCode=1;});

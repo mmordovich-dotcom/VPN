@@ -15,5 +15,8 @@
     "@shared-vps/database": "workspace:*",
     "@shared-vps/runtime": "workspace:*",
     "@shared-vps/shared": "workspace:*"
+  },
+  "exports": {
+    "./background": "./dist/background.js"
   }
 }

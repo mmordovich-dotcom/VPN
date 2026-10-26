@@ -1,6 +1,6 @@
 {
   "name": "shared-vps-platform",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "packageManager": "pnpm@10.34.4",
@@ -33,7 +33,8 @@
     "cloud:database": "tsx scripts/cloud-database.ts",
     "cloud:validate": "tsx scripts/validate-cloud.ts",
     "build:cloud:unified": "pnpm build:cloud:api && pnpm --filter @shared-vps/web build",
-    "verify:web-artifact": "tsx scripts/verify-web-artifact.ts"
+    "verify:web-artifact": "tsx scripts/verify-web-artifact.ts",
+    "build:cloud:worker": "pnpm -r --filter @shared-vps/worker... build"
   },
   "devDependencies": {
     "@types/node": "^22.15.0",
