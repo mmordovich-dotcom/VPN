@@ -84,7 +84,7 @@ test('desktop public AXON, theme and accessible login fallback',async({page})=>{
 test('mobile Mini App purchase, renewal, settings and native navigation',async({page})=>{
   await page.setViewportSize({width:390,height:844});const f=await fixtures(page,{logged:false,mini:true,empty:true});await ready(page);
   await expect(page.locator('html')).toHaveAttribute('data-mini-app','true');expect(await page.evaluate(()=>window.__tgCalls)).toEqual(['ready','expand']);
-  await expect(page.getByRole('heading',{name:'Ваше пространство.'})).toBeVisible();await noOverflow(page);await page.screenshot({path:'ui-results/mini-dashboard.png',fullPage:true,animations:'disabled'});
+  await expect(page.getByRole('heading',{name:'Ваше пространство.'})).toBeVisible();await noOverflow(page);await page.screenshot({path:'ui-results/mini-dashboard.png',fullPage:true,animations:'disabled'});await page.screenshot({path:'ui-results/mini-dashboard-viewport.png',animations:'disabled'});
   await page.locator('.bottom-nav').getByRole('link',{name:'Каталог',exact:true}).click();await page.getByRole('button',{name:/Оформить тестовую подписку/}).click();await expect(page.getByRole('dialog')).toBeVisible();await page.getByRole('button',{name:'Подтвердить',exact:true}).click();
   await expect(page.getByRole('heading',{name:'Подписка под контролем.'})).toBeVisible();await page.getByRole('button',{name:/Продлить демо/}).click();await page.getByRole('button',{name:'Подтвердить',exact:true}).click();await expect(page.getByText('60 дней осталось')).toBeVisible();
   const writes=f.requests.filter(x=>x.path==='/orders'&&x.method==='POST');expect(writes).toHaveLength(2);expect(writes[1].body.renewalId).toBeTruthy();expect(writes.every(x=>x.headers['x-shared-vps']==='1')).toBe(true);
