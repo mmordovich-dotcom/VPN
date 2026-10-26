@@ -1,4 +1,5 @@
--- Additive Stage 1.3. Existing business rows, constraints and migrations remain intact.
+-- Additive Stage 1.3. Existing business rows, constraints and prior migrations remain intact.
+BEGIN;
 CREATE TABLE "background_jobs" (
   "id" UUID NOT NULL PRIMARY KEY,
   "order_id" UUID REFERENCES "orders"("id") ON DELETE RESTRICT ON UPDATE CASCADE,
@@ -55,8 +56,9 @@ ALTER TABLE "telegram_updates"
 CREATE INDEX "telegram_updates_status_next_attempt_at_id_idx" ON "telegram_updates"("status","next_attempt_at","id");
 CREATE INDEX "telegram_updates_status_lease_until_idx" ON "telegram_updates"("status","lease_until");
 -- Expand the existing inbox status check before quarantining legacy or new exhausted sends.
-ALTER TABLE "telegram_updates" DROP CONSTRAINT "telegram_updates_status_valid";
-ALTER TABLE "telegram_updates" ADD CONSTRAINT "telegram_updates_status_valid" CHECK ("status" IN ('PENDING','READY','PROCESSING','DONE','DEAD'));
+ALTER TABLE "telegram_updates"
+  DROP CONSTRAINT "telegram_updates_status_valid",
+  ADD CONSTRAINT "telegram_updates_status_valid" CHECK ("status" IN ('PENDING','READY','PROCESSING','DONE','DEAD'));
 -- Old in-flight sends have an uncertain delivery outcome: quarantine rather than resend.
 UPDATE "telegram_updates" SET "lease_until"="updated_at" + interval '2 minutes', "send_started_at"="updated_at" WHERE "status"='PROCESSING';
 UPDATE "telegram_updates" SET "status"='DEAD', "last_error"='ATTEMPTS_EXHAUSTED', "finished_at"=CURRENT_TIMESTAMP WHERE "attempts">=5 AND "status" NOT IN ('DONE','PROCESSING');
@@ -72,3 +74,4 @@ CREATE INDEX "support_tickets_created_at_id_idx" ON "support_tickets"("created_a
 CREATE INDEX "support_tickets_user_id_created_at_id_idx" ON "support_tickets"("user_id","created_at","id");
 CREATE INDEX "audit_logs_created_at_id_idx" ON "audit_logs"("created_at","id");
 CREATE INDEX "background_jobs_created_at_id_idx" ON "background_jobs"("created_at","id");
+COMMIT;
