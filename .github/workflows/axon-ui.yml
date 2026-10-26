@@ -27,7 +27,7 @@ jobs:
           VITE_API_BASE_URL: http://127.0.0.1:4173
       - name: Install pinned browser test tooling in the ephemeral runner only
         run: pnpm add -Dw --lockfile=false --ignore-scripts @playwright/test@1.56.1
-      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm exec playwright install chromium
       - name: Exercise site and simulated Telegram clients without production access
         run: pnpm exec playwright test --config tests/ui/playwright.config.mjs
       - uses: actions/upload-artifact@v4
