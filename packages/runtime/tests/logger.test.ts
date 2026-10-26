@@ -12,4 +12,3 @@ describe('server secret redaction', () => {
     expect(output.join('')).toContain('safe status');
   });
 });
-
