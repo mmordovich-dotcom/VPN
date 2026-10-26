@@ -1,3 +1,4 @@
+import { appLabel, miniAppButton, inlineMainMenu, botStatus, botError } from './bot-ui.js';
 import { randomUUID } from 'node:crypto';
 import { backoff, databaseNow } from './job-queue.js';
 import { TelegramFailure, telegramFailure } from './telegram-errors.js';
@@ -10,7 +11,7 @@ import { loginAction, type LoginAction } from './bot-login-updates.js';
 type Update = { update_id: number; loginAction?: LoginAction; message?: { message_id: number; text?: string; from?: { id: number; is_bot?: boolean }; chat: { id: number; type: string } }; callback_query?: { id: string; data?: string; from: { id: number; is_bot?: boolean }; message?: { message_id: number; chat: { id: number; type: string } } } };
 type Reply = { method: string; body: Record<string, unknown> };
 const buttons = ['🛒 Купить подписку', '👤 Моя подписка', '🔌 Подключиться', '🔄 Продлить подписку', '📖 Инструкции', '💬 Поддержка'];
-export const mainKeyboard = { keyboard: [buttons.slice(0, 2).map(text => ({ text })), buttons.slice(2, 4).map(text => ({ text })), buttons.slice(4).map(text => ({ text })), [{ text: 'Личный кабинет / Войти на сайт' }, { text: 'Получить код входа' }]], resize_keyboard: true };
+export const mainKeyboard = { keyboard: [buttons.slice(0, 2).map(text => ({ text })), buttons.slice(2, 4).map(text => ({ text })), buttons.slice(4).map(text => ({ text })), [{ text: 'Личный кабинет / Войти на сайт' }, { text: 'Получить код входа' }], [{ text: appLabel }]], resize_keyboard: true };
 const inline = (items: { text: string; callback_data?: string; web_app?: { url: string }; url?: string }[][]) => ({ inline_keyboard: items });
 const back = { text: '← Назад', callback_data: 'menu' };
 export class TelegramGateway {
@@ -47,6 +48,8 @@ export class TelegramGateway {
     const current = await this.status();
     if (current.url && current.url !== `${this.config.PUBLIC_ORIGIN}/api/v1/telegram/webhook`) fail(409, 'WEBHOOK_IN_USE');
     await this.register();
+    const app = miniAppButton(this.config.PUBLIC_ORIGIN);
+    if (app) await this.call('setChatMenuButton', { menu_button: { type: 'web_app', text: 'AXON', web_app: app.web_app } });
   }
   async accept(raw: unknown) {
     if (!raw || typeof raw !== 'object' || !Number.isInteger((raw as Update).update_id) || (raw as Update).update_id < 0) fail(400, 'INVALID_UPDATE');
@@ -69,7 +72,7 @@ export class TelegramGateway {
     let text: string; let markup: object = inline([[back]]);
     if (action.type === 'CLAIM') {
       const request = await this.login.claim(action.tokenHash, String(senderId));
-      text = `Подтвердите вход в Shared VPS Platform\n\nСверьте число на сайте: ${request.displayCode}\nПодтверждайте только запрос, который вы сами создали в своём браузере. Не подтверждайте просьбы других людей.`;
+      text = `Подтвердите вход в AXON\n\nСверьте число на сайте: ${request.displayCode}\nПодтверждайте только запрос, который вы сами создали в своём браузере. Не подтверждайте просьбы других людей.`;
       markup = inline([[{ text: 'Подтвердить вход', callback_data: `login:yes:${request.requestId}` }], [{ text: 'Отменить вход', callback_data: `login:no:${request.requestId}` }]]);
     } else if (action.type === 'CONFIRM' || action.type === 'CANCEL') {
       await this.login.confirm(action.requestId, String(senderId), action.type === 'CONFIRM');
@@ -98,13 +101,17 @@ export class TelegramGateway {
     const subscriptions = await this.engine.subscriptions(user.id);
     const active = subscriptions.find(s => s.status === 'ACTIVE');
     const last = active ?? subscriptions[0];
-    if (text === '/notifications' || text === 'notifications' || /^notify:(reminders|updates):(on|off)$/.test(text)) {
+    if (text === appLabel || text === '/app' || text === 'app') {
+      const button = miniAppButton(this.config.PUBLIC_ORIGIN);
+      content = button ? 'AXON · Ваше пространство\n\nОткройте полное приложение внутри Telegram: каталог, подписка, история, поддержка и настройки. Быстрые действия по-прежнему доступны в чате.' : 'Приложение временно недоступно. Подписка, продление и поддержка доступны в меню бота.';
+      markup = inline([...(button ? [[button]] : []), [back]]);
+    } else if (text === '/notifications' || text === 'notifications' || /^notify:(reminders|updates):(on|off)$/.test(text)) {
       const match = /^notify:(reminders|updates):(on|off)$/.exec(text);
       const data = match ? { [match[1] === 'reminders' ? 'remindersEnabled' : 'updatesEnabled']: match[2] === 'on', telegramBlocked: false } : {};
       const preference = await this.db.notificationPreference.upsert({ where: { userId:user.id }, update:data, create:{userId:user.id,...data} });
       content = 'Уведомления\nНапоминания о сроке: ' + (preference.remindersEnabled ? 'включены' : 'выключены') + '\nСтатусы заказов и продления: ' + (preference.updatesEnabled ? 'включены' : 'выключены') + '\nИзменения не влияют на ответы бота и вход на сайт.';
       markup = inline([[{text:preference.remindersEnabled ? 'Выключить напоминания' : 'Включить напоминания',callback_data:'notify:reminders:'+(preference.remindersEnabled?'off':'on')}],[{text:preference.updatesEnabled ? 'Выключить статусы' : 'Включить статусы',callback_data:'notify:updates:'+(preference.updatesEnabled?'off':'on')}],[back]]);
-    } else if (text.startsWith('/start') || text === 'menu') content = 'Shared VPS Platform · ДЕМОНСТРАЦИЯ\nПокупки, серверы и доступы тестовые. Реальные деньги не списываются. Выберите действие:';
+    } else if (text.startsWith('/start') || text === 'menu') content = 'AXON · Ваше пространство\n\nПодписка, продление и поддержка — прямо здесь. Для полного интерфейса нажмите «Открыть приложение».\n\nДемо-режим: списание 0 ₽, серверы виртуальные, настоящих VPN-ключей нет.';
     else if (text === buttons[0] || text === 'buy' || text === buttons[3] || text === 'renew') {
       const renewal = text === buttons[3] || text === 'renew';
       const plan = renewal && last ? last.plan : await this.db.plan.findFirst({ where: { isActive: true }, orderBy: { code: 'asc' } });
@@ -120,21 +127,21 @@ export class TelegramGateway {
       const order = await this.db.order.findFirst({ where: { id, userId: user.id } });
       if (!order) fail(404, 'ORDER_NOT_FOUND');
       if (order.status === 'AWAITING_PAYMENT' && Date.now() - order.createdAt.getTime() > 1800000) { await this.engine.payment(user.id, id, 'cancel'); content = 'Кнопка устарела. Откройте покупку заново.'; }
-      else { const result = await this.engine.payment(user.id, id, text.startsWith('confirm:') ? 'confirm' : 'cancel'); content = `Тестовый заказ: ${result.status}\n${result.status === 'COMPLETED' ? 'Подписка активирована. Все данные сохранены в PostgreSQL.' : 'Деньги не списывались.'}`; markup = inline([[{ text: 'Моя подписка', callback_data: 'subscription' }], [back]]); }
+      else { const result = await this.engine.payment(user.id, id, text.startsWith('confirm:') ? 'confirm' : 'cancel'); content = `Тестовый заказ: ${botStatus(result.status)}\n${result.status === 'COMPLETED' ? 'Подписка активирована. Все данные сохранены в PostgreSQL.' : 'Деньги не списывались.'}`; markup = inline([[{ text: 'Моя подписка', callback_data: 'subscription' }], [back]]); }
     } else if (text === buttons[1] || text === 'subscription') {
-      content = last ? `${last.plan.name} · ${last.status}\nНачало: ${last.startedAt?.toISOString().slice(0, 10) ?? '—'}\nОкончание: ${last.expiresAt?.toISOString().slice(0, 10) ?? '—'}\nОсталось: ${Math.max(0, Math.ceil(((last.expiresAt?.getTime() ?? 0) - Date.now()) / 86400000))} дней\nВиртуальный VPS: ${last.serverSlot?.server.externalServerId ?? '—'}\nДемо-доступ: ${last.status === 'ACTIVE' ? last.credentials.find(c => !c.revokedAt)?.demoIdentifier ?? '—' : 'неактивен'}\nЭто не VPN-ключ.` : 'У вас пока нет подписок.';
+      content = last ? `${last.plan.name} · ${botStatus(last.status)}\nНачало: ${last.startedAt?.toISOString().slice(0, 10) ?? '—'}\nОкончание: ${last.expiresAt?.toISOString().slice(0, 10) ?? '—'}\nОсталось: ${Math.max(0, Math.ceil(((last.expiresAt?.getTime() ?? 0) - Date.now()) / 86400000))} дней\nВиртуальный VPS: ${last.serverSlot?.server.externalServerId ?? '—'}\nДемо-доступ: ${last.status === 'ACTIVE' ? last.credentials.find(c => !c.revokedAt)?.demoIdentifier ?? '—' : 'неактивен'}\nЭто не VPN-ключ.` : 'У вас пока нет подписок.';
       markup = inline([[{ text: 'Продлить', callback_data: 'renew' }, { text: 'Подключиться', callback_data: 'connect' }], [{ text: 'Уведомления', callback_data: 'notifications' }], [back]]);
     } else if (text === buttons[2] || text === 'connect') {
       content = 'Подключение в демо\n1. Проверьте активную подписку.\n2. Откройте её демонстрационный идентификатор.\n3. Настройка реального устройства не требуется: действующих VPN-ключей здесь нет.\nВыберите удобный способ:';
-      markup = inline([[{ text: 'Инструкция в Telegram', callback_data: 'subscription' }], ...(this.config.PUBLIC_ORIGIN ? [[{ text: 'Открыть Mini App', web_app: { url: `${this.config.PUBLIC_ORIGIN}/#/connect` } }]] : []), [back]]);
+      markup = inline([[{ text: 'Инструкция в Telegram', callback_data: 'subscription' }], ...(miniAppButton(this.config.PUBLIC_ORIGIN, '/connect') ? [[miniAppButton(this.config.PUBLIC_ORIGIN, '/connect')!]] : []), [back]]);
     } else if (text === buttons[4] || text === 'help') {
       content = 'Инструкции'; markup = inline([['Подписка', 'Статус', 'Mini App', 'Продление', 'Вопросы'].map((title, i) => ({ text: title, callback_data: `help:${i}` })), [back]]);
     } else if (text.startsWith('help:')) {
-      content = ['До трёх пользователей используют один виртуальный VPS. Четвёртый создаёт следующий. Всё демонстрационное.', 'Нажмите «Моя подписка»: информация поступает из общей PostgreSQL.', 'Нажмите «Подключиться», затем «Открыть Mini App». Все основные действия доступны и без сайта.', 'Нажмите «Продлить подписку». Активный срок увеличится от текущей даты окончания; истёкшая подписка получит новое свободное место.', 'Списаний и настоящих VPN-ключей нет. Сайт и бот используют один аккаунт Telegram. Бесплатный сервер может запускаться около минуты.'][Number(text.split(':')[1])] ?? 'Выберите раздел справки.';
+      content = ['До трёх пользователей используют один виртуальный VPS. Четвёртый создаёт следующий. Всё демонстрационное.', 'Нажмите «Моя подписка»: информация поступает из общей PostgreSQL.', 'Нажмите «Открыть приложение» или /app. В Mini App есть главная, каталог, подписка, продление, подключение, история, поддержка, уведомления и профиль. В чате остаются все быстрые действия.', 'Нажмите «Продлить подписку». Активный срок увеличится от текущей даты окончания; истёкшая подписка получит новое свободное место.', 'Списаний и настоящих VPN-ключей нет. Сайт и бот используют один аккаунт Telegram. Бесплатный сервер может запускаться около минуты.'][Number(text.split(':')[1])] ?? 'Выберите раздел справки.';
       markup = inline([[{ text: 'Все инструкции', callback_data: 'help' }], [back]]);
     } else if (text === buttons[5] || text === 'support') {
       const tickets = await this.db.supportTicket.findMany({ where: { userId: user.id }, take: 5, orderBy: { createdAt: 'desc' } });
-      content = `Поддержка\n${tickets.map(t => `№${t.number} · ${t.status}`).join('\n') || 'Обращений пока нет.'}`;
+      content = `Поддержка\n${tickets.map(t => `№${t.number} · ${botStatus(t.status)}`).join('\n') || 'Обращений пока нет.'}`;
       markup = inline([[{ text: 'Открыть обращение', callback_data: 'support:new' }, { text: 'Обновить статус', callback_data: 'support' }], [back]]);
     } else if (text === 'support:new') {
       await this.db.botState.upsert({ where: { userId: user.id }, update: { awaitingSupport: true }, create: { userId: user.id, awaitingSupport: true } });
@@ -144,11 +151,11 @@ export class TelegramGateway {
       if (state?.awaitingSupport && text.length >= 5 && text.length <= 4000) {
         const ticket = await this.db.supportTicket.upsert({ where: { operationKey: `telegram:${update.update_id}` }, update: {}, create: { userId: user.id, text, operationKey: `telegram:${update.update_id}` } });
         await this.db.botState.update({ where: { userId: user.id }, data: { awaitingSupport: false } });
-        content = `Обращение №${ticket.number} сохранено. Статус: ${ticket.status}.`;
+        content = `Обращение №${ticket.number} сохранено. Статус: ${botStatus(ticket.status)}.`;
       } else content = 'Выберите действие кнопкой меню. Для обращения введите от 5 до 4000 символов.';
     }
     if (text.startsWith('/start') || text === 'menu') await this.db.botState.upsert({ where: { userId: user.id }, update: { awaitingSupport: false }, create: { userId: user.id } });
-    return { method: cb ? 'editMessageText' : 'sendMessage', body: { chat_id: sender.id, ...(cb ? { message_id: msg.message_id } : {}), text: content, reply_markup: cb && markup === mainKeyboard ? inline(buttons.map((title, i) => [{ text: title, callback_data: ['buy', 'subscription', 'connect', 'renew', 'help', 'support'][i]! }])) : markup } };
+    return { method: cb ? 'editMessageText' : 'sendMessage', body: { chat_id: sender.id, ...(cb ? { message_id: msg.message_id } : {}), text: content, reply_markup: cb && markup === mainKeyboard ? inlineMainMenu(this.config.PUBLIC_ORIGIN) : markup } };
   }
   async drain(signal?: AbortSignal) {
     if (!this.config.TELEGRAM_BOT_TOKEN && !this.transport) return;
@@ -178,7 +185,7 @@ export class TelegramGateway {
           catch (error) {
             if (!(error instanceof DomainError) || error.statusCode >= 500) throw error;
             const cb = raw.callback_query; const msg = cb?.message ?? raw.message;
-            if (msg) response = { method: cb ? 'editMessageText' : 'sendMessage', body: { chat_id: msg.chat.id, ...(cb ? { message_id: msg.message_id, reply_markup: inline([[back]]) } : { reply_markup: mainKeyboard }), text: `Действие недоступно (${error.code}). Вернитесь в меню. Данные сохранены.` } };
+            if (msg) response = { method: cb ? 'editMessageText' : 'sendMessage', body: { chat_id: msg.chat.id, ...(cb ? { message_id: msg.message_id, reply_markup: inline([[back]]) } : { reply_markup: mainKeyboard }), text: botError(error.code) } };
           }
           if (response && !raw.loginAction && !loginAction(raw.callback_query?.data ?? raw.message?.text ?? '')) {
             const now = await databaseNow(this.db);
