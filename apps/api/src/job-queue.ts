@@ -11,7 +11,9 @@ export const backoff = (attempt: number, retryAfterMs = 0) => Math.min(3600000, 
 export async function databaseNow(db: PrismaClient | JobTx) { const rows = await db.$queryRaw<{ now: Date }[]>`SELECT clock_timestamp() AS now`; return rows[0]!.now; }
 export async function enqueue(tx: JobTx, kind: JobKind, key: string, payload: Prisma.InputJsonObject = {}, runAt?: Date) {
   // The business transaction and its outbox job commit together. A retry never resets a terminal job.
-  return tx.backgroundJob.upsert({ where: { key }, update: {}, create: { kind, key, payload, ...(typeof payload.orderId==='string'?{orderId:payload.orderId}:{}), ...(runAt ? { runAt } : {}) } });
+  const id=randomUUID(); const orderId=typeof payload.orderId==='string'?payload.orderId:null;
+  await tx.$executeRaw`INSERT INTO background_jobs (id,kind,"key",payload,order_id,run_at) VALUES (${id}::uuid,${kind},${key},${JSON.stringify(payload)}::jsonb,${orderId}::uuid,COALESCE(${runAt??null}::timestamptz,CURRENT_TIMESTAMP)) ON CONFLICT ("key") DO NOTHING`;
+  return tx.backgroundJob.findUniqueOrThrow({where:{key}});
 }
 export class JobQueue {
   constructor(public db: PrismaClient, private leaseMs = 60000) {}

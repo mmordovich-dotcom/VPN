@@ -63,7 +63,7 @@ export class TelegramGateway {
         ...(typeof update.message.text === 'string' ? { text: action?.type === 'CLAIM' ? '/login-request' : update.message.text } : {}) } } : {}),
       ...(update.callback_query ? { callback_query: { id: update.callback_query.id, ...(typeof update.callback_query.data === 'string' ? { data: update.callback_query.data } : {}), from: sender(update.callback_query.from),
         ...(update.callback_query.message ? { message: { message_id: update.callback_query.message.message_id, chat: chat(update.callback_query.message.chat) } } : {}) } } : {}) };
-    await this.db.telegramUpdate.upsert({ where: { id: update.update_id }, update: {}, create: { id: update.update_id, payload: JSON.parse(JSON.stringify(safe)) as Prisma.InputJsonObject } });
+    await this.db.telegramUpdate.upsert({ where: { id: update.update_id }, update: { id:update.update_id }, create: { id: update.update_id, payload: JSON.parse(JSON.stringify(safe)) as Prisma.InputJsonObject } });
   }
   private async loginReply(action: LoginAction, update: Update, senderId: number, messageId: number): Promise<Reply> {
     let text: string; let markup: object = inline([[back]]);
