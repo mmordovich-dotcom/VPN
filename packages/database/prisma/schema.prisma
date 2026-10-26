@@ -91,8 +91,10 @@ model User {
   botState BotState?
   loginRequests LoginRequest[]
   loginGrants LoginGrant[]
+  notificationPreference NotificationPreference?
 
   @@index([status])
+  @@index([createdAt, id])
   @@map("users")
 }
 
@@ -128,6 +130,7 @@ model Plan {
 }
 
 model Order {
+  backgroundJobs BackgroundJob[]
   operationKey String? @unique @map("operation_key") @db.VarChar(160)
   renewalId String? @map("renewal_id") @db.Uuid
   renewal Subscription? @relation("Renewals", fields: [renewalId], references: [id], onDelete: Restrict)
@@ -151,6 +154,8 @@ model Order {
   @@index([userId, createdAt])
   @@index([planId])
   @@index([status, createdAt])
+  @@index([createdAt, id])
+  @@index([userId, createdAt, id])
   @@map("orders")
 }
 
@@ -188,6 +193,7 @@ model Server {
 
   @@unique([provider, externalServerId])
   @@index([status, expiresAt])
+  @@index([createdAt, id])
   @@map("servers")
 }
 
@@ -229,6 +235,8 @@ model Subscription {
   @@index([planId])
   @@index([status, expiresAt])
   @@index([serverSlotId])
+  @@index([createdAt, id])
+  @@index([userId, createdAt, id])
   @@map("subscriptions")
 }
 
@@ -259,6 +267,7 @@ model AuditLog {
   @@index([actorUserId, createdAt])
   @@index([entityType, entityId])
   @@index([createdAt])
+  @@index([createdAt, id])
   @@map("audit_logs")
 }
 
@@ -297,6 +306,8 @@ model SupportTicket {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   user User @relation(fields: [userId], references: [id], onDelete: Restrict)
   @@index([userId, createdAt])
+  @@index([createdAt, id])
+  @@index([userId, createdAt, id])
   @@map("support_tickets")
 }
 model BotState {
@@ -306,6 +317,12 @@ model BotState {
   @@map("bot_states")
 }
 model TelegramUpdate {
+  nextAttemptAt DateTime @default(now()) @map("next_attempt_at") @db.Timestamptz(3)
+  leaseToken String? @map("lease_token") @db.Uuid
+  leaseUntil DateTime? @map("lease_until") @db.Timestamptz(3)
+  sendStartedAt DateTime? @map("send_started_at") @db.Timestamptz(3)
+  finishedAt DateTime? @map("finished_at") @db.Timestamptz(3)
+  lastError String? @map("last_error") @db.VarChar(64)
   updatedAt DateTime @updatedAt @default(now()) @map("updated_at") @db.Timestamptz(3)
   id Int @id
   payload Json
@@ -314,6 +331,8 @@ model TelegramUpdate {
   attempts Int @default(0)
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   @@index([status, createdAt])
+  @@index([status, nextAttemptAt, id])
+  @@index([status, leaseUntil])
   @@map("telegram_updates")
 }
 
@@ -355,4 +374,57 @@ model AuthLimit {
   expiresAt DateTime @map("expires_at") @db.Timestamptz(3)
   @@index([expiresAt])
   @@map("auth_limits")
+}
+
+model BackgroundJob {
+  orderId String? @map("order_id") @db.Uuid
+  order Order? @relation(fields:[orderId], references:[id], onDelete:Restrict)
+  id String @id @default(uuid()) @db.Uuid
+  kind String @db.VarChar(32)
+  key String @unique @db.VarChar(180)
+  payload Json @default("{}")
+  status String @default("PENDING") @db.VarChar(16)
+  attempts Int @default(0)
+  maxAttempts Int @default(8) @map("max_attempts")
+  runAt DateTime @default(now()) @map("run_at") @db.Timestamptz(3)
+  leaseToken String? @map("lease_token") @db.Uuid
+  leaseUntil DateTime? @map("lease_until") @db.Timestamptz(3)
+  startedAt DateTime? @map("started_at") @db.Timestamptz(3)
+  sendStartedAt DateTime? @map("send_started_at") @db.Timestamptz(3)
+  finishedAt DateTime? @map("finished_at") @db.Timestamptz(3)
+  lastError String? @map("last_error") @db.VarChar(64)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @default(now()) @map("updated_at") @db.Timestamptz(3)
+  @@index([status, runAt, id])
+  @@index([status, leaseUntil])
+  @@index([finishedAt])
+  @@index([orderId])
+  @@index([createdAt, id])
+  @@map("background_jobs")
+}
+model NotificationPreference {
+  userId String @id @map("user_id") @db.Uuid
+  remindersEnabled Boolean @default(false) @map("reminders_enabled")
+  updatesEnabled Boolean @default(false) @map("updates_enabled")
+  telegramBlocked Boolean @default(false) @map("telegram_blocked")
+  nextSendAt DateTime @default(now()) @map("next_send_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @default(now()) @map("updated_at") @db.Timestamptz(3)
+  user User @relation(fields:[userId], references:[id], onDelete:Restrict)
+  @@map("notification_preferences")
+}
+model DeliveryThrottle {
+  key String @id @db.VarChar(32)
+  nextAt DateTime @map("next_at") @db.Timestamptz(3)
+  @@map("delivery_throttles")
+}
+model WorkerHeartbeat {
+  id String @id @db.Uuid
+  mode String @db.VarChar(16)
+  status String @default("RUNNING") @db.VarChar(16)
+  startedAt DateTime @default(now()) @map("started_at") @db.Timestamptz(3)
+  lastSeenAt DateTime @default(now()) @map("last_seen_at") @db.Timestamptz(3)
+  lastCompletedAt DateTime? @map("last_completed_at") @db.Timestamptz(3)
+  lastError String? @map("last_error") @db.VarChar(64)
+  @@index([lastSeenAt])
+  @@map("worker_heartbeats")
 }
