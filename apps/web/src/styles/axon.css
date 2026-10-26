@@ -21,3 +21,6 @@ html[data-mini-app=true] body{min-height:var(--tg-height,100dvh)}
 
 /* Route focus announces new content; visible rings remain on interactive controls. */
 #page:focus{outline:none}
+
+/* Clip the skip link until keyboard focus, including full-page browser captures. */
+.skip-link{top:12px;clip-path:inset(50%)}.skip-link:focus{clip-path:none}
