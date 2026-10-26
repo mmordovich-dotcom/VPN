@@ -1,3 +1,4 @@
+import type { ApiConfig } from '@shared-vps/runtime';
 import type { FastifyInstance } from 'fastify';
 import type { PrismaClient } from '@shared-vps/database';
 import { Auth, digest } from './auth.js';
@@ -9,7 +10,7 @@ export async function rateLimit(db:PrismaClient,userId:string,scope:string,max:n
   const now=await databaseNow(db);const key=digest(`stage13:${scope}:${userId}:${Math.floor(now.getTime()/window)}`);
   const row=await db.authLimit.upsert({where:{key},create:{key,attempts:1,expiresAt:new Date(now.getTime()+window)},update:{attempts:{increment:1}}});if(row.attempts>max)fail(429,'RATE_LIMITED');
 }
-export function reliabilityRoutes(app:FastifyInstance,db:PrismaClient,auth:Auth,runtime:BackgroundRuntime){
+export function reliabilityRoutes(app:FastifyInstance,db:PrismaClient,auth:Auth,runtime:BackgroundRuntime,config:ApiConfig){
   app.get<{Params:{resource:Resource};Querystring:ListQuery}>('/api/v1/admin/lists/:resource',{schema:{params:{type:'object',additionalProperties:false,required:['resource'],properties:{resource:{enum:resources}}},querystring:listSchema}},async req=>{const actor=await auth.user(req,true);await rateLimit(db,actor.id,'admin-list',120);return listRecords(db,req.params.resource,req.query);});
   app.get<{Params:{resource:'orders'|'subscriptions'|'tickets'};Querystring:ListQuery}>('/api/v1/account/lists/:resource',{schema:{params:{type:'object',additionalProperties:false,required:['resource'],properties:{resource:{enum:['orders','subscriptions','tickets']}}},querystring:listSchema}},async req=>{const actor=await auth.user(req);await rateLimit(db,actor.id,'account-list',120);return listRecords(db,req.params.resource,req.query,actor.id);});
   app.get('/api/v1/notifications',async req=>{const user=await auth.user(req);const preference=await db.notificationPreference.findUnique({where:{userId:user.id}});return {remindersEnabled:preference?.remindersEnabled??false,updatesEnabled:preference?.updatesEnabled??false};});
@@ -21,7 +22,7 @@ export function reliabilityRoutes(app:FastifyInstance,db:PrismaClient,auth:Auth,
   let cachedWebhook:{until:number;value:unknown}|undefined;
   app.get('/api/v1/admin/diagnostics',async req=>{
     const actor=await auth.user(req,true);await rateLimit(db,actor.id,'diagnostics',30);
-    const started=Date.now();const now=await databaseNow(db);
+    const started=Date.now();const now=await databaseNow(db);const databaseLatencyMs=Date.now()-started;
     const [jobs,inbox,oldest,workers,recoveryErrors,activeUsers,servers,occupied]=await Promise.all([
       db.backgroundJob.groupBy({by:['status'],_count:{_all:true}}),db.telegramUpdate.groupBy({by:['status'],_count:{_all:true}}),
       db.backgroundJob.findFirst({where:{status:'PENDING',runAt:{lte:now}},orderBy:{runAt:'asc'},select:{runAt:true}}),
@@ -30,8 +31,8 @@ export function reliabilityRoutes(app:FastifyInstance,db:PrismaClient,auth:Auth,
       db.$queryRaw<{count:bigint}[]>`SELECT count(DISTINCT user_id) AS count FROM subscriptions WHERE status='ACTIVE' AND expires_at>${now}`,
       db.server.count({where:{status:'ACTIVE'}}),db.serverSlot.count({where:{status:'OCCUPIED'}}),
     ]);
-    if(!cachedWebhook||cachedWebhook.until<Date.now()){let value:unknown={state:'unconfigured'};try{const s=await runtime.telegram.status();value={state:'available',pending:s.pending,lastErrorAt:s.lastErrorAt};}catch{value={state:'unavailable'};}cachedWebhook={until:Date.now()+30000,value};}
-    return {stage:'1.3',demo:true,database:{state:'available',latencyMs:Date.now()-started},jobs:jobs.map(x=>({status:x.status,count:x._count._all})),inbox:inbox.map(x=>({status:x.status,count:x._count._all})),oldestDueDelaySeconds:oldest?Math.max(0,Math.floor((now.getTime()-oldest.runAt.getTime())/1000)):0,
-      workers:workers.map(x=>({...x,stale:now.getTime()-x.lastSeenAt.getTime()>90000})),recoveryErrors,activeUsers:Number(activeUsers[0]?.count??0),activeServers:servers,occupiedSlots:occupied,webhook:cachedWebhook.value,backgroundMode:'leases / '+(runtime?'configured':'unconfigured')};
+    if(!cachedWebhook||cachedWebhook.until<Date.now()){let value:unknown={state:'unconfigured'};try{if(config.TELEGRAM_BOT_TOKEN){const s=await runtime.telegram.status();value={state:s.url===`${config.PUBLIC_ORIGIN}/api/v1/telegram/webhook`?'ready':s.url?'mismatch':'missing',pending:s.pending,lastErrorAt:s.lastErrorAt};}}catch{value={state:'unavailable'};}cachedWebhook={until:Date.now()+30000,value};}
+    return {stage:'1.3',demo:true,database:{state:'available',latencyMs:databaseLatencyMs},jobs:jobs.map(x=>({status:x.status,count:x._count._all})),inbox:inbox.map(x=>({status:x.status,count:x._count._all})),oldestDueDelaySeconds:oldest?Math.max(0,Math.floor((now.getTime()-oldest.runAt.getTime())/1000)):0,
+      workers:workers.map(x=>({...x,stale:now.getTime()-x.lastSeenAt.getTime()>90000})),recoveryErrors,activeUsers:Number(activeUsers[0]?.count??0),activeServers:servers,occupiedSlots:occupied,webhook:cachedWebhook.value,backgroundMode:config.BACKGROUND_MODE};
   });
 }

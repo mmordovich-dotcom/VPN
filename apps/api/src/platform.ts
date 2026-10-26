@@ -24,7 +24,7 @@ export async function platformRoutes(app: FastifyInstance, db: PrismaClient, con
     }
     if(req.method==='POST' && /^\/api\/v1\/(orders|subscriptions|support|admin)(?:\/|$)/.test(req.url)){const actor=await auth.user(req,req.url.startsWith('/api/v1/admin'));await rateLimit(db,actor.id,'mutations',30);if(req.url==='/api/v1/support')await rateLimit(db,actor.id,'support',5,3600000);}
   });
-  reliabilityRoutes(app,db,auth,runtime);
+  reliabilityRoutes(app,db,auth,runtime,config);
   app.get('/api/v1/auth/config', async () => ({ botUsername: config.TELEGRAM_BOT_USERNAME ?? null, loginEnabled: botLogin.available(), loginMode: 'bot', stage: '1.3', demo: true }));
   botLoginRoutes(app, botLogin);
   app.post<{ Body: { initData: string } }>('/api/v1/auth/telegram', { schema: { body: { type: 'object', additionalProperties: false, required: ['initData'], properties: { initData: { type: 'string', maxLength: 12000 } } } } }, async (req, reply) => auth.login(req, reply, req.body));
