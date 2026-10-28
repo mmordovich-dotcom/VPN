@@ -15,7 +15,7 @@ export class SupportService {
     const text = messageText(textInput, 5); if (!Object.hasOwn(supportCategories,category)) fail(400, 'INVALID_CATEGORY');
     const key = 'support:' + userId + ':' + operation(operationKey);
     return locked(this.db, async tx => {
-      await actor(tx, userId); const prior = await tx.supportTicket.findUnique({ where: { operationKey: key } });
+      await actor(tx, userId); const prior = await tx.supportTicket.findFirst({ where: { OR: [{ operationKey: key }, ...(/^telegram:\d+$/.test(operationKey) ? [{ operationKey, userId }] : [])] } });
       if (prior) { if (prior.userId !== userId || prior.text !== text || prior.category !== category) fail(409, 'KEY_REUSED'); return ticketView(prior); }
       if(await tx.supportTicket.count({where:{userId,createdAt:{gte:new Date(Date.now()-3600000)}}})>=5)fail(429,'RATE_LIMITED');
       const ticket = await tx.supportTicket.create({ data: { userId, text, category, operationKey: key } });
