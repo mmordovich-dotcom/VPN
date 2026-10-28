@@ -16,7 +16,7 @@ export function readinessRoutes(app: FastifyInstance, db: PrismaClient, auth: Au
   app.get('/api/v1/instructions', async () => ({ platforms: instructionPlatforms, steps: demoInstructions, purchaseGuidance, purchaseSteps, demo: true }));
   app.get<{ Params: { id: string } }>('/api/v1/orders/:id', { schema: { params } }, async req => {
     const user = await auth.user(req); const order = await db.order.findFirst({ where: { id: req.params.id, userId: user.id }, include: { plan: true, payments: true, subscription: { include: subscriptionInclude }, renewal: { include: subscriptionInclude } } }); if (!order) fail(404, 'ORDER_NOT_FOUND');
-    const sub = order.subscription ?? order.renewal; const activated = order.status === 'COMPLETED' && sub?.status === 'ACTIVE' && Boolean(sub.expiresAt && sub.expiresAt > new Date());
+    const candidate = order.subscription ?? order.renewal; const sub = candidate?.userId === user.id ? candidate : null; const activated = order.status === 'COMPLETED' && sub?.status === 'ACTIVE' && Boolean(sub.expiresAt && sub.expiresAt > new Date());
     return { order: publicOrder(order), activated, subscription: sub ? publicSubscription(sub) : null };
   });
   app.get('/api/v1/account/compensations', async req => db.subscriptionCompensation.findMany({ where: { subscription: { userId: (await auth.user(req)).id } }, select: { id: true, hours: true, reason: true, previousExpiry: true, newExpiry: true, createdAt: true }, orderBy: { createdAt: 'desc' }, take: 50 }));

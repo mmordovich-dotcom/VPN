@@ -17,7 +17,7 @@ export class Notifications {
       const user = await tx.user.findUnique({ where: { id: userId }, include: { identities: true, notificationPreference: true } });
       const transactional = ['SUPPORT_REPLY','COMPENSATION','INCIDENT_ALERT'].includes(event);
       if (!user || user.status !== 'ACTIVE') return null;
-      const preference = user.notificationPreference ?? (transactional ? await tx.notificationPreference.upsert({where:{userId},update:{},create:{userId}}) : null);
+      const preference = user.notificationPreference ?? (transactional ? await tx.notificationPreference.upsert({where:{userId},update:{},create:{userId,nextSendAt:new Date(0)}}) : null);
       if (!preference || preference.telegramBlocked) return null;
       const reminder = event.startsWith('REMINDER') || event === 'EXPIRED';
       if (!transactional && (reminder ? !preference.remindersEnabled : !preference.updatesEnabled)) return null;

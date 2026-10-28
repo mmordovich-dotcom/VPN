@@ -25,10 +25,10 @@ export async function listRecords(db:PrismaClient,resource:Resource,query:ListQu
   const spec=pageSpec(resource,query,userId??'admin');
   const fields:Record<Resource,Record<string,unknown>>={
     users:{id:true,role:true,status:true,createdAt:true,identities:{where:{provider:'TELEGRAM'},take:3,select:{providerUserId:true}},_count:{select:{subscriptions:true}}},
-    orders:{id:true,userId:!userId,status:true,amount:true,currency:true,lastError:true,createdAt:true,payments:{take:5,orderBy:{createdAt:'desc'},select:{status:true}}},
-    subscriptions:{id:true,userId:!userId,status:true,expiresAt:true,createdAt:true,plan:{select:{name:true}}},
+    orders:{id:true,userId:true,status:true,amount:true,currency:true,lastError:true,createdAt:true,payments:{take:5,orderBy:{createdAt:'desc'},select:{status:true}}},
+    subscriptions:{id:true,userId:true,status:true,expiresAt:true,createdAt:true,plan:{select:{name:true}}},
     servers:{id:true,externalServerId:true,status:true,capacity:true,expiresAt:true,createdAt:true,slots:{take:100,orderBy:{slotNumber:'asc'},select:{slotNumber:true,status:true}}},
-    tickets:{id:true,userId:!userId,number:true,text:true,category:true,status:true,createdAt:true,updatedAt:true},
+    tickets:{id:true,userId:true,number:true,text:true,category:true,status:true,createdAt:true,updatedAt:true},
     events:{id:true,actorUserId:true,action:true,entityType:true,entityId:true,createdAt:true},
     jobs:{id:true,kind:true,key:true,status:true,attempts:true,maxAttempts:true,runAt:true,leaseUntil:true,lastError:true,createdAt:true,finishedAt:true},
   };

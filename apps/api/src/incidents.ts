@@ -44,7 +44,7 @@ export class IncidentService {
       await actor(tx, adminId, true); const incident = await tx.serviceIncident.findUnique({ where: { id: incidentId } });
       if (!incident || incident.component !== 'PROVIDER' || !incident.serverId || !incident.confirmedAt) fail(409, 'PROVIDER_INCIDENT_REQUIRED');
       const ticket = await tx.supportTicket.findUnique({ where: { id: ticketId } }); if (!ticket) fail(404, 'TICKET_NOT_FOUND');
-      const related = await tx.subscription.count({ where: { userId: ticket.userId, serverSlot: { serverId: incident.serverId }, startedAt: { lte: incident.resolvedAt ?? new Date() }, OR: [{ expiresAt: { gt: incident.startedAt } }, { expiresAt: null }] } });
+      const related = await tx.subscription.count({ where: { userId: ticket.userId, status:{in:['ACTIVE','SUSPENDED','EXPIRED']}, serverSlot: { serverId: incident.serverId }, startedAt: { lte: incident.resolvedAt ?? new Date() }, OR: [{ expiresAt: { gt: incident.startedAt } }, { expiresAt: null }] } });
       if (!related || ticket.incidentId && ticket.incidentId !== incidentId) fail(409, 'INCIDENT_UNRELATED');
       const prior = await tx.providerEscalation.findUnique({ where: { ticketId_incidentId: { ticketId, incidentId } } }); if (prior) return prior;
       const draft = 'DEMO — черновик для ручной проверки. Реального запроса провайдеру нет.\nКомпонент: инфраструктура.\nНачало: ' + incident.startedAt.toISOString() + '\nПоследняя проверка: ' + (incident.lastCheckedAt?.toISOString() ?? 'нет') + '\nРезультат: ' + incident.lastResult + '\nПросьба уточнить причину недоступности и порядок восстановления. Данные клиентов и секреты исключены.';
