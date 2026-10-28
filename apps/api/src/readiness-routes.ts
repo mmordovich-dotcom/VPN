@@ -32,11 +32,12 @@ export function readinessRoutes(app: FastifyInstance, db: PrismaClient, auth: Au
     app.post<{ Params: { id: string }; Body: { status: SupportStatus; expectedStatus?: string } }>(root, { schema: { params, body: { type: 'object', additionalProperties: false, required: ['status'], properties: { status: { enum: admin ? Object.keys(supportStatuses) : ['CLOSED'] }, expectedStatus: { enum: Object.keys(supportStatuses) } } } } }, async req => support.status((await auth.user(req, admin)).id, req.params.id, req.body.status, req.body.expectedStatus, admin));
   }
   app.get('/api/v1/admin/readiness', async req => {
-    await auth.user(req, true); const [capacity, incidentsList, compensations] = await Promise.all([
+    await auth.user(req, true); const [capacity, incidentsList, compensations, defaultCapacity] = await Promise.all([
       db.setting.findUnique({ where: { key: 'server.capacity4_approved' } }),
       db.serviceIncident.findMany({ orderBy: { createdAt: 'desc' }, take: 20, include: { observations: { orderBy: { checkedAt: 'desc' }, take: 10 }, escalations: true } }),
       db.subscriptionCompensation.findMany({ orderBy: { createdAt: 'desc' }, take: 30 }),
-    ]); return { demo: true, capacity4Approved: capacity?.value === true, defaultCapacity: 3, financialDefaults, incidents: incidentsList.map(i => ({ ...i, durationSeconds: Math.max(0, Math.floor(((i.resolvedAt ?? new Date()).getTime() - i.startedAt.getTime()) / 1000)), escalations: i.escalations.map(e => ({ ...e, hash: draftHash(e.draft) })) })), compensations };
+      db.setting.findUnique({where:{key:'server.default_capacity'}}),
+    ]); return { demo: true, capacity4Approved: capacity?.value === true, defaultCapacity: Number(defaultCapacity?.value ?? 3), financialDefaults, incidents: incidentsList.map(i => ({ ...i, durationSeconds: Math.max(0, Math.floor(((i.resolvedAt ?? new Date()).getTime() - i.startedAt.getTime()) / 1000)), escalations: i.escalations.map(e => ({ ...e, hash: draftHash(e.draft) })) })), compensations };
   });
   app.post<{ Body: FinancialInput }>('/api/v1/admin/finance/scenario', { schema: { body: { type: 'object', additionalProperties: false, required: Object.keys(financialDefaults), properties: Object.fromEntries(Object.keys(financialDefaults).map(k => [k, { type: 'integer', minimum: 0, maximum: 100000000 }])) } } }, async req => { await auth.user(req, true); try { return financialScenario(req.body); } catch { fail(400, 'INVALID_SCENARIO'); } });
   app.post<{ Body: { approved: boolean; evidence: string } }>('/api/v1/admin/capacity', { schema: { body: { type: 'object', additionalProperties: false, required: ['approved', 'evidence'], properties: { approved: { type: 'boolean' }, evidence: { type: 'string', minLength: 20, maxLength: 500 } } } } }, async req => {

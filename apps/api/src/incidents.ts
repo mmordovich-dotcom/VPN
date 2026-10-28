@@ -108,8 +108,8 @@ export class IncidentService {
   }
   async alertLongIncidents() {
     return locked(this.db, async tx => {
-      const now = await databaseNow(tx); const incidents = await tx.serviceIncident.findMany({ where: { status: 'CONFIRMED', confirmedAt: { lte: new Date(now.getTime() - 900000) } }, orderBy: { startedAt: 'asc' }, take: 100 });
-      const admins = await tx.user.findMany({ where: { role: 'ADMIN', status: 'ACTIVE' }, orderBy: { id: 'asc' }, take: 100 });
+      const now = await databaseNow(tx); const incidents = await tx.serviceIncident.findMany({ where: { status: 'CONFIRMED', confirmedAt: { lte: new Date(now.getTime() - 900000) } }, orderBy: { startedAt: 'asc' }, take: 20 });
+      const admins = await tx.user.findMany({ where: { role: 'ADMIN', status: 'ACTIVE' }, orderBy: { id: 'asc' }, take: 20 });
       for (const incident of incidents) for (const admin of admins) await enqueue(tx, 'NOTIFY', 'incident-alert:' + incident.id + ':' + admin.id, { event: 'INCIDENT_ALERT', userId: admin.id, incidentId: incident.id });
     });
   }
