@@ -6,9 +6,9 @@ export type AccountResource = 'orders' | 'subscriptions' | 'tickets';
 const filters: Record<AccountResource, string[]> = {
   orders: ['AWAITING_PAYMENT', 'PAID', 'PROCESSING', 'COMPLETED', 'FAILED', 'CANCELLED'],
   subscriptions: ['ACTIVE', 'PENDING', 'EXPIRED', 'CANCELLED', 'SUSPENDED'],
-  tickets: ['OPEN', 'IN_PROGRESS', 'CLOSED'],
+  tickets: ['OPEN','WAITING_ADMIN','IN_PROGRESS','WAITING_PROVIDER','WAITING_USER','CLOSED'],
 };
-const names: Record<string, string> = { AWAITING_PAYMENT: 'Ожидает подтверждения', PAID: 'Ожидает активации', PROCESSING: 'Выполняется', COMPLETED: 'Завершён', FAILED: 'Ошибка', CANCELLED: 'Отменён', ACTIVE: 'Активна', PENDING: 'Ожидание', EXPIRED: 'Истекла', SUSPENDED: 'Приостановлена', OPEN: 'Открыто', IN_PROGRESS: 'В работе', CLOSED: 'Закрыто' };
+const names: Record<string, string> = { AWAITING_PAYMENT: 'Ожидает подтверждения', PAID: 'Ожидает активации', PROCESSING: 'Выполняется', COMPLETED: 'Завершён', FAILED: 'Ошибка', CANCELLED: 'Отменён', ACTIVE: 'Активна', PENDING: 'Ожидание', EXPIRED: 'Истекла', SUSPENDED: 'Приостановлена', OPEN: 'Открыто', IN_PROGRESS: 'В работе',WAITING_ADMIN:'Ожидает поддержки',WAITING_USER:'Ожидает ответа',WAITING_PROVIDER:'Уточняем у провайдера', CLOSED: 'Закрыто' };
 const date = (value?: string) => value ? new Date(value).toLocaleString('ru-RU', { dateStyle: 'medium', timeStyle: 'short' }) : '—';
 export class AccountLists {
   private root: HTMLElement | null = null;
@@ -57,8 +57,8 @@ export class AccountLists {
     let content = '';
     if (this.resource === 'orders') {
       const amount = new Intl.NumberFormat('ru-RU', { style: 'currency', currency: row.currency ?? 'RUB' }).format((row.amount ?? 0) / 100);
-      content = `<p>${e(amount)} · фактическое списание 0 ₽</p>${row.status === 'AWAITING_PAYMENT' ? `<div class="actions"><button class="secondary" data-pay="${e(row.id)}">Подтвердить демо</button><button class="text-button" data-order-cancel="${e(row.id)}">Отменить заказ</button><button class="text-button" data-reject="${e(row.id)}">Демо-отказ</button></div>` : ''}`;
-    } else if (this.resource === 'tickets') content = `<p>${e(row.text)}</p>`;
+      content = `<a class="text-button" href="#/checkout?order=${e(row.id)}">Статус и инструкция →</a><p>${e(amount)} · фактическое списание 0 ₽</p>${row.status === 'AWAITING_PAYMENT' ? `<div class="actions"><button class="secondary" data-pay="${e(row.id)}">Подтвердить демо</button><button class="text-button" data-order-cancel="${e(row.id)}">Отменить заказ</button><button class="text-button" data-reject="${e(row.id)}">Демо-отказ</button></div>` : ''}`;
+    } else if (this.resource === 'tickets') content = `<p>${e(row.text)}</p><a class="text-button" href="#/support?ticket=${e(row.id)}">Открыть переписку →</a>`;
     else content = `<p>Окончание: ${e(date(row.expiresAt))}</p><a class="text-button" href="#/subscriptions">Текущая подписка →</a>`;
     return `<article class="history-card"><div class="card-top"><h3>${e(title)}</h3>${statusBadge(row.status)}</div><div class="history-meta"><span>${e(date(row.createdAt))}</span><span title="${e(row.id)}">ID ${e(row.id.slice(0, 8))}</span></div>${content}</article>`;
   }
