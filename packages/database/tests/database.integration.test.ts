@@ -51,7 +51,7 @@ describe.sequential('PostgreSQL migrations and invariants', () => {
     planId = first.id;
     expect(first.id).toBe(second.id); expect(second.price).toBe(17000); expect(second.durationDays).toBe(30);
     expect(await db.plan.count({ where: { code: 'basic' } })).toBe(1);
-    expect(await db.setting.count()).toBe(5);
+    expect(await db.setting.count()).toBe(6); expect((await db.setting.findUniqueOrThrow({where:{key:'server.capacity4_approved'}})).value).toBe(false);
     await db.plan.update({ where: { id: planId }, data: { price: 18000 } });
     await seedDatabase(db); expect((await db.plan.findUniqueOrThrow({ where: { id: planId } })).price).toBe(18000);
   });

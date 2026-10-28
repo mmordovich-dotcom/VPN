@@ -115,7 +115,7 @@ describe.sequential('Stage 1.2 real PostgreSQL, shared API and Telegram', () => 
       await db.user.update({ where: { id: u.id }, data: { role: 'ADMIN' } });
       const dashboard = await app.inject({ url: '/api/v1/admin', headers: h }); expect(dashboard.statusCode).toBe(200); expect(dashboard.json().stats.active).toBe(1);
       const changed = await app.inject({ method: 'POST', url: `/api/v1/admin/plans/${planId}`, headers: h, payload: { price: 19000, durationDays: 30, maxUsersPerServer: 3, isActive: true } }); expect(changed.statusCode).toBe(200);
-      expect((await app.inject({ method: 'POST', url: '/api/v1/admin/settings', headers: h, payload: { key: 'server.default_capacity', value: 4 } })).statusCode).toBe(400);
+      expect((await app.inject({ method: 'POST', url: '/api/v1/admin/settings', headers: h, payload: { key: 'server.default_capacity', value: 5 } })).statusCode).toBe(400);
     } finally { await app.close(); }
   });
   it('signed Mini App login shares bot identity; rejects forgery, stale data and replay, uses HttpOnly cookie', async () => {
