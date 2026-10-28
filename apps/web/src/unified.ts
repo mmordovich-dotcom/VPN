@@ -61,6 +61,7 @@ function subCard(s: Sub, connect: boolean) {
 }
 
 function recentOrders(orders: Order[]) { return '<div class="history-cards recent-orders">' + orders.map(o => `<a class="history-card recent-order" href="#/orders"><div class="card-top"><strong>Заказ ${e(o.id.slice(0,8))}</strong>${statusBadge(o.status)}</div><div class="history-meta"><span>${date(o.createdAt ?? null)}</span><strong>${money(o.amount,o.currency)}</strong></div><span class="small">Открыть заказ →</span></a>`).join('') + '</div>'; }
+Object.assign(messages,{TICKET_NOT_FOUND:'Обращение не найдено или принадлежит другому аккаунту.',TICKET_CLOSED:'Обращение закрыто. Создайте новое или попросите администратора открыть его снова.',STALE_TICKET:'Статус уже изменился. Обновите переписку.',MORE_EVIDENCE_REQUIRED:'Нужны две последовательные неудачи с интервалом не менее минуты и свежая проверка.',RECOVERY_CHECK_REQUIRED:'Сначала запишите свежую успешную проверку.',CAPACITY_APPROVAL_REQUIRED:'Режим 4 закрыт. Сначала требуется отдельная оценка и разрешение в инструментах готовности.',COMPENSATION_ALREADY_GRANTED:'Компенсация по этому инциденту уже записана.',COMPENSATION_OVERLAP:'Этот период сбоя уже покрыт компенсацией.',COMPENSATION_EXCEEDS_OUTAGE:'Часов больше подтверждённой длительности сбоя.',SUBSCRIPTION_NOT_AFFECTED:'Подписка не активна или не связана с инцидентом.',RESOLVED_PROVIDER_INCIDENT_REQUIRED:'Нужен подтверждённый и закрытый инфраструктурный демо-инцидент.',DRAFT_REVIEW_REQUIRED:'Сначала проверьте полный текст черновика.',STALE_DRAFT:'Черновик изменился. Обновите страницу и проверьте его заново.'});
 let generation = 0;
 const adminLists = new AdminLists(api, errorText, bind);
 const accountLists = new AccountLists(api, errorText, bind);
@@ -119,6 +120,12 @@ async function route() {
     }
     else if (path === '/profile') html = heading('Это ваше пространство.', 'Аккаунт, настройки и полезные разделы.') + `<div class="cards two"><article class="panel"><div class="profile-avatar">${icon('user')}</div><span class="eyebrow">TELEGRAM / ПРОВЕРЕННЫЙ АККАУНТ</span><h2>Вы подключены.</h2><p>Ваш аккаунт связан с Telegram. Подписки и история доступны на сайте и в Mini App.</p><p class="profile-id">ID аккаунта: ${e(me.id)}</p><p class="small">Роль: ${me.role === 'ADMIN' ? 'Администратор' : 'Пользователь'}</p><button class="text-button" data-logout>Выйти из аккаунта</button></article><div class="quick-links">${quickLink('/notifications','Уведомления','Выберите нужные сообщения','bell')}${quickLink('/history','История подписок','Предыдущие сроки и статусы','clock')}${quickLink('/instructions','Инструкции','Подключение, Mini App и ответы','shield')}${quickLink('/support','Поддержка','Ваши обращения в одном месте','chat')}${me.role === 'ADMIN' ? quickLink('/admin','Администрирование','Диагностика, записи и настройки','grid') : ''}</div></div>`;
     else if (path === '/admin') { if (me.role !== 'ADMIN') throw new ApiError(403,'ADMIN_REQUIRED'); html = adminPage(await api<Admin>('/admin')); }
+    if(path==='/history'){
+      try{const credits=await api<{id:string;hours:number;reason:string;createdAt:string;newExpiry:string}[]>('/account/compensations');html+='<section class="panel"><h2>Компенсации времени</h2>'+(credits.map(c=>'<article class="history-card"><strong>+'+c.hours+' ч.</strong><p>'+e(c.reason)+'</p><p class="small">'+date(c.createdAt)+' · окончание после начисления: '+date(c.newExpiry)+'</p></article>').join('')||'<p>Начислений пока нет. Компенсация назначается после проверки связанного инцидента.</p>')+'</section>';}catch{html+='<p class="status-note">История компенсаций временно недоступна. Подписки сохранены; обратитесь в поддержку, если нужен ответ.</p>';}
+    }
+    if(me && ['/', '/subscriptions','/connect'].includes(path)){
+      try{const service=await api<{message:string}>('/account/service-status');html+='<p class="status-note">'+e(service.message)+' <a href="#/support">Поддержка →</a></p>';}catch{html+='<p class="status-note">Проверка доступности временно недоступна. При проблеме напишите в поддержку.</p>';}
+    }
     if (current !== generation) return;
     page.innerHTML = html; bind();
     const threadRoot=document.querySelector<HTMLElement>('#support-thread'); if(threadRoot)supportView.mount(threadRoot,threadRoot.dataset.ticket!,threadRoot.dataset.admin==='true');
@@ -178,7 +185,7 @@ function bind() {
 }
 window.addEventListener('hashchange', () => { const token = takeLoginLink(window.location, window.history); if (token !== null) loginView.receiveLink(token); mini.feedback('selection'); void route(); });
 window.addEventListener('pageshow', event => { if (event.persisted) { mini.start(); void route(); } });
-window.addEventListener('pagehide', () => { loginView.unmount(); adminLists.unmount(); accountLists.unmount(); mini.destroy(); });
+window.addEventListener('pagehide', () => { loginView.unmount(); adminLists.unmount(); accountLists.unmount(); supportView.unmount();readinessAdmin.unmount();clearTimeout(checkoutTimer);mini.destroy(); });
 async function start() {
   // Preserve the canonical same-origin session and strip login fragments before loading Telegram.
   if (import.meta.env.MODE === 'production' && new URL(__API_BASE_URL__).origin !== location.origin) { location.replace(`${__API_BASE_URL__}/${location.hash}`); return; }
