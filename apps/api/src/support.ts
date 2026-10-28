@@ -31,7 +31,7 @@ export class SupportService {
       let anchor: { id: string; createdAt: Date } | null = null;
       if (cursor) { if (!/^[0-9a-f-]{36}$/i.test(cursor)) fail(400, 'INVALID_CURSOR'); anchor = await tx.supportMessage.findFirst({ where: { id: cursor, ticketId } }); if (!anchor) fail(400, 'INVALID_CURSOR'); }
       const rows = await tx.supportMessage.findMany({ where: { ticketId, ...(anchor ? { OR: [{ createdAt: { lt: anchor.createdAt } }, { createdAt: anchor.createdAt, id: { lt: anchor.id } }] } : {}) }, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], take: limit + 1, select: { id: true, authorRole: true, text: true, createdAt: true } });
-      return { ticket: ticketView(ticket), ...(admin ? { userId: ticket.userId, incidentId: ticket.incidentId } : {}), messages: rows.slice(0, limit).reverse(), nextCursor: rows.length > limit ? rows[limit-1]!.id : null };
+      return { ticket: ticketView(ticket), ...(admin ? { userId: ticket.userId, incidentId: ticket.incidentId } : {}), messages: rows.length === 0 && !cursor ? [{id:ticket.id,authorRole:'USER',text:ticket.text,createdAt:ticket.createdAt}] : rows.slice(0, limit).reverse(), nextCursor: rows.length > limit ? rows[limit-1]!.id : null };
     });
   }
   async reply(userId: string, ticketId: string, textInput: string, operationKey: string, admin = false) {
@@ -41,6 +41,10 @@ export class SupportService {
       const prior = await tx.supportMessage.findUnique({ where: { operationKey: key } }); if (prior) { if (prior.ticketId !== ticketId || prior.text !== text || prior.authorRole !== (admin ? 'ADMIN' : 'USER')) fail(409, 'KEY_REUSED'); return { id: prior.id }; }
       if (ticket.status === 'CLOSED') fail(409, 'TICKET_CLOSED');
       if(await tx.supportMessage.count({where:{authorId:userId,createdAt:{gte:new Date(Date.now()-60000)}}})>=30)fail(429,'RATE_LIMITED');
+      // Stage 1.4 may create a ticket between migration and application deploy.
+      // Its original text remains readable, and is materialized before the first reply.
+      const originalKeys=[ticket.operationKey,'migration:ticket:'+ticket.id].filter((key):key is string=>typeof key==='string');
+      if(!await tx.supportMessage.count({where:{ticketId,operationKey:{in:originalKeys}}}))await tx.supportMessage.upsert({where:{operationKey:'migration:ticket:'+ticket.id},update:{},create:{ticketId,authorId:ticket.userId,authorRole:'USER',text:ticket.text,createdAt:ticket.createdAt,operationKey:'migration:ticket:'+ticket.id}});
       const message = await tx.supportMessage.create({ data: { ticketId, authorId: userId, authorRole: admin ? 'ADMIN' : 'USER', text, operationKey: key } });
       await tx.supportTicket.update({ where: { id: ticketId }, data: { status: admin ? 'WAITING_USER' : 'WAITING_ADMIN', updatedAt: new Date() } });
       await recordAudit(tx, userId, admin ? 'support.admin_replied' : 'support.user_replied', 'support_ticket', ticketId, { messageId: message.id });
