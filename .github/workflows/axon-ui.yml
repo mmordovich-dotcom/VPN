@@ -1,7 +1,7 @@
 name: AXON browser checks
 on:
   push:
-    branches: [main, stage-1.4-axon-ui]
+    branches: [main, stage-1.4-axon-ui, stage-1.5-release-readiness]
   pull_request:
   workflow_dispatch:
 permissions:
