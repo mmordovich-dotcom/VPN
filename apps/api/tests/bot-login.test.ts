@@ -54,6 +54,6 @@ describe('existing-bot webhook bootstrap', () => {
     const calls: { method: string; body: Record<string, unknown> }[] = [];
     const gateway = new TelegramGateway(db, config, new SubscriptionEngine(db), async (method, body) => { calls.push({ method, body }); return method === 'getMe' ? { username: 'vpnaxon_bot' } : { url: '' }; });
     await gateway.bootstrap();
-    expect(calls.at(-1)).toMatchObject({ method: 'setWebhook', body: { url: 'https://platform.example/api/v1/telegram/webhook', drop_pending_updates: false } });
+    expect(calls.find(call => call.method === 'setWebhook')).toMatchObject({ method: 'setWebhook', body: { url: 'https://platform.example/api/v1/telegram/webhook', drop_pending_updates: false } });
   });
 });

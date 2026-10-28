@@ -49,7 +49,7 @@ export class Notifications {
       const sendingAt=await databaseNow(tx);
       const owned=await tx.backgroundJob.updateMany({ where: { id:job.id,status:'PROCESSING',leaseToken:job.leaseToken,leaseUntil:{gt:sendingAt} }, data: { sendStartedAt:sendingAt,leaseUntil:new Date(sendingAt.getTime()+30000) } });
       if(!owned.count)throw new JobFailure('LEASE_LOST',true);
-      return { chat_id: identity.providerUserId, text, link_preview_options: { is_disabled: true } };
+      return { chat_id: identity.providerUserId, text: `AXON · ${text}`, link_preview_options: { is_disabled: true } };
     });
     if (!prepared) return true;
     try { await this.send('sendMessage', prepared); }

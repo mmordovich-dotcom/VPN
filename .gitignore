@@ -13,3 +13,7 @@ coverage/
 *.p12
 *.pfx
 *.tsbuildinfo
+
+# Cloud browser test artifacts
+ui-results/
+playwright-report/

@@ -1,0 +1,40 @@
+name: AXON browser checks
+on:
+  push:
+    branches: [main, stage-1.4-axon-ui]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: axon-ui-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  browser:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Build the actual web application for an isolated fixture origin
+        run: pnpm --filter @shared-vps/shared build && pnpm --filter @shared-vps/web build
+        env:
+          VITE_API_BASE_URL: http://127.0.0.1:4173
+      - name: Install pinned browser test tooling in the ephemeral runner only
+        run: pnpm add -Dw --lockfile=false --ignore-scripts @playwright/test@1.56.1
+      - run: pnpm exec playwright install chromium
+      - name: Exercise site and simulated Telegram clients without production access
+        run: pnpm exec playwright test --config tests/ui/playwright.config.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: axon-browser-proof
+          path: |
+            ui-results/
+            playwright-report/
+          retention-days: 7

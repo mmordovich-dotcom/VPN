@@ -1,6 +1,6 @@
 # Обновление Shared VPS Platform через браузер
 
-Этот документ описывает подготовку выпуска Stage 1.3 после опубликованного Stage 1.2.5 в существующие GitHub, Render и Neon. Подробности входа и защиты — в [Stage 1.2.5](stage-1.2.5.md). Команды ниже являются значениями полей облака; запускать их на своём компьютере не нужно.
+Stage 1.3 уже опубликован. Общая конфигурация и историческая последовательность его миграции сохранены ниже; актуальные действия для PR Stage 1.4 описаны в последнем разделе и не требуют новой миграции. Используются существующие GitHub, Render и Neon. Подробности входа и защиты — в [Stage 1.2.5](stage-1.2.5.md). Команды ниже являются значениями полей облака; запускать их на своём компьютере не нужно.
 
 ## GitHub
 
@@ -8,9 +8,9 @@
 
 Если подключение GitHub возвращает 403, обновите разрешения стандартным входом в GitHub Repositories через github.dev/vscode.dev или используйте Add file → Upload files в **нужной ветке и папке** сайта GitHub. Отсутствие доступа нельзя обходить извлечением токенов. Наличие локального кода не означает публикацию: проверьте commit/PR на GitHub.
 
-## Миграция существующей Neon
+## Существующая Neon и миграция Stage 1.3
 
-Используется только проект **patient-queen-83814443**, production **br-rapid-butterfly-b4t863o9**, neondb. Другой старый проект не меняйте. До production проверьте миграцию на отдельной ветке этой production. Новая миграция **20261026000000_reliability** добавляет background_jobs, notification_preferences, delivery_throttles, worker_heartbeats, lease/retry поля Telegram inbox и индексы. Все три прежние миграции и бизнес-данные сохраняются. На production не применяются db push/reset. Перед выпуском используйте [план защиты данных](backup-recovery.md); старая тестовая ветка не заменяет свежую pre-release копию.
+Используется только проект **patient-queen-83814443**, production **br-rapid-butterfly-b4t863o9**, neondb. Другой старый проект не меняйте. До production проверьте миграцию на отдельной ветке этой production. Уже применённая в Stage 1.3 миграция **20261026000000_reliability** добавляет background_jobs, notification_preferences, delivery_throttles, worker_heartbeats, lease/retry поля Telegram inbox и индексы. Все три прежние миграции и бизнес-данные сохраняются. На production не применяются db push/reset. Перед выпуском используйте [план защиты данных](backup-recovery.md); старая тестовая ветка не заменяет свежую pre-release копию.
 
 В GitHub → Settings → Secrets and variables → Actions уже предусмотрен **NEON_MIGRATION_DATABASE_URL**: direct Neon URL, SSL. Если секрет актуален, не меняйте его. Никогда не вставляйте строку подключения в код, PR или чат.
 
@@ -80,3 +80,7 @@ Free Render может засыпать; холодный запуск заде�
 Архитектура готова, отдельный платный Render Background Worker не создан. При отдельном согласовании хостинга: Build — corepack enable && pnpm install --frozen-lockfile --prod=false && pnpm build:cloud:worker; Start — pnpm start:worker. Версия кода и миграции должны совпадать с API. Использовать ту же защищённую серверную DATABASE_URL, PUBLIC_ORIGIN и конфигурацию существующего бота; ничего не помещать в VITE_* или клиент. API переключается на BACKGROUND_MODE=external после проверки самостоятельного процесса. Кратковременное пересечение безопасно благодаря lease/event keys и engine lock. Worker не регистрирует webhook и не запускает getUpdates/polling.
 
 На Free остаётся один Web Service и режим inline. Keep-alive обходы и обещание круглосуточной доставки не добавляются. Старые apps/bot команды не используются для второго polling-процесса.
+
+## Следующий выпуск Stage 1.4 (AXON)
+
+Для этой ветки новая миграция и env не требуются. После разрешения владельца: зелёные foundation + AXON browser checks, Auto-Deploy Off, merge, Manual Deploy проверенного SHA, реальные проверки сайта/бота/Mini App, затем восстановление After CI Checks Pass. Старые четыре миграции не изменяются. При bootstrap опубликованной версии default menu существующего бота станет AXON WebApp на том же origin, после проверки его username и webhook. Нужна пользовательская приёмка на настоящем Telegram. Подробности — stage-1.4.md. Три посторонних suspended Render-сервиса не нужны и не возобновляются.
