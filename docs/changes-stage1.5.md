@@ -42,7 +42,9 @@
 - package.json
 - packages/database/prisma/migrations/20261029000000_release_readiness/migration.sql
 - packages/database/prisma/schema.prisma
+- packages/database/tests/database.integration.test.ts
 - packages/database/tests/readiness.integration.test.ts
+- packages/database/tests/unified.integration.test.ts
 - packages/shared/src/constants/index.ts
 - packages/shared/src/index.ts
 - packages/shared/src/release.ts
