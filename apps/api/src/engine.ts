@@ -124,12 +124,17 @@ export class SubscriptionEngine {
         const expiry = new Date(Math.max(now.getTime(), sub?.status === 'ACTIVE' ? sub.expiresAt!.getTime() : 0) + days(order.periodDays));
         let slotId = sub?.status === 'ACTIVE' ? sub.serverSlotId : null;
         if (!slotId) {
-          let slot = await tx.serverSlot.findFirst({ where: { status: 'AVAILABLE', server: { status: 'ACTIVE', capacity: { lte: order.plan.maxUsersPerServer } }, subscriptions: { none: { status: { in: ['PENDING', 'ACTIVE', 'SUSPENDED'] } } } }, orderBy: [{ serverId: 'asc' }, { slotNumber: 'asc' }] });
+          const settings = await tx.setting.findMany();
+          const approved = settings.find(x => x.key === 'server.capacity4_approved')?.value === true;
+          const setting = (key: string, fallback: number) => Number(settings.find(x => x.key === key)?.value ?? fallback);
+          if (!Number.isInteger(order.plan.maxUsersPerServer) || order.plan.maxUsersPerServer < 1 || order.plan.maxUsersPerServer > 4) fail(409, 'INVALID_CAPACITY');
+          const allocationLimit = Math.min(order.plan.maxUsersPerServer, approved ? 4 : 3);
+          let slot = await tx.serverSlot.findFirst({ where: { status: 'AVAILABLE', server: { status: 'ACTIVE', capacity: { lte: allocationLimit } }, subscriptions: { none: { status: { in: ['PENDING', 'ACTIVE', 'SUSPENDED'] } } } }, orderBy: [{ serverId: 'asc' }, { slotNumber: 'asc' }] });
           if (!slot) {
-            const settings = await tx.setting.findMany();
-            const setting = (key: string, fallback: number) => Number(settings.find(x => x.key === key)?.value ?? fallback);
-            const capacity = Math.min(order.plan.maxUsersPerServer, setting('server.default_capacity', 3));
-            if (!Number.isInteger(capacity) || capacity < 1 || capacity > 100) fail(409, 'INVALID_CAPACITY');
+            const requestedCapacity = setting('server.default_capacity', 3);
+            if (!Number.isInteger(requestedCapacity) || requestedCapacity < 1 || requestedCapacity > 4) fail(409, 'INVALID_CAPACITY');
+            const capacity = Math.min(allocationLimit, requestedCapacity);
+            if (!Number.isInteger(capacity) || capacity < 1 || capacity > 4) fail(409, 'INVALID_CAPACITY');
             const id = randomUUID();
             const externalServerId = await this.provider.prepare(id);
             const server = await tx.server.create({ data: { id, externalServerId, status: 'ACTIVE', capacity, monthlyCost: setting('server.monthly_cost_minor', 20000), rentedAt: now, expiresAt: new Date(now.getTime() + days(setting('server.rental_days', 30))) } });

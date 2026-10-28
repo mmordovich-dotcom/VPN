@@ -1,3 +1,4 @@
+import { IncidentService } from './incidents.js';
 import { randomUUID } from 'node:crypto';
 import type { PrismaClient, BackgroundJob } from '@shared-vps/database';
 import type { ApiConfig } from '@shared-vps/runtime';
@@ -36,7 +37,7 @@ export class BackgroundRuntime {
     const root = typeof body.root === 'string' ? body.root : undefined;
     try {
       if (job.kind === 'FULFILL_ORDER') { if (typeof body.orderId !== 'string') throw new JobFailure('INVALID_ORDER_JOB',true); await this.engine.fulfill(body.orderId); }
-      else if (job.kind === 'LIFECYCLE') await this.engine.maintain(cursor,root);
+      else if (job.kind === 'LIFECYCLE') { await this.engine.maintain(cursor,root); await new IncidentService(this.db,this.engine).alertLongIncidents(); }
       else if (job.kind === 'RECOVER') await this.engine.recover(cursor,root);
       else if (job.kind === 'CLEANUP') await this.cleanup();
       else if (job.kind === 'NOTIFY') return this.notifications.deliver(job);

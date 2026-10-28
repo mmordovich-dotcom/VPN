@@ -1,3 +1,7 @@
+import { RELEASE } from '@shared-vps/shared';
+import { publicOrder, publicSubscription } from './presenters.js';
+import { readinessRoutes } from './readiness-routes.js';
+import { ticketView } from './support.js';
 import type { FastifyInstance } from 'fastify';
 import type { ApiConfig } from '@shared-vps/runtime';
 import type { PrismaClient } from '@shared-vps/database';
@@ -25,18 +29,18 @@ export async function platformRoutes(app: FastifyInstance, db: PrismaClient, con
     if(req.method==='POST' && /^\/api\/v1\/(orders|subscriptions|support|admin)(?:\/|$)/.test(req.url)){const actor=await auth.user(req,req.url.startsWith('/api/v1/admin'));await rateLimit(db,actor.id,'mutations',30);if(req.url==='/api/v1/support')await rateLimit(db,actor.id,'support',5,3600000);}
   });
   reliabilityRoutes(app,db,auth,runtime,config);
-  app.get('/api/v1/auth/config', async () => ({ botUsername: config.TELEGRAM_BOT_USERNAME ?? null, loginEnabled: botLogin.available(), loginMode: 'bot', stage: '1.4', demo: true }));
+  readinessRoutes(app,db,auth,engine);
+  app.get('/api/v1/auth/config', async () => ({ botUsername: config.TELEGRAM_BOT_USERNAME ?? null, loginEnabled: botLogin.available(), loginMode: 'bot', ...RELEASE }));
   botLoginRoutes(app, botLogin);
   app.post<{ Body: { initData: string } }>('/api/v1/auth/telegram', { schema: { body: { type: 'object', additionalProperties: false, required: ['initData'], properties: { initData: { type: 'string', maxLength: 12000 } } } } }, async (req, reply) => auth.login(req, reply, req.body));
   app.get('/api/v1/me', async req => { const u = await auth.user(req); return { id: u.id, role: u.role }; });
   app.post('/api/v1/auth/logout', async (req, reply) => { await db.session.deleteMany({ where: { tokenHash: digest(auth.token(req)) } }); await botLogin.cancelBrowser(req, reply); auth.cookie(reply, '', 0); return { ok: true }; });
-  app.get('/api/v1/subscriptions', async req => engine.subscriptions((await auth.user(req)).id));
-  app.get('/api/v1/orders', async req => db.order.findMany({ where: { userId: (await auth.user(req)).id }, include: { plan: true, payments: true }, orderBy: { createdAt: 'desc' }, take: 100 }));
-  app.post<{ Body: { planId: string; operationKey: string; renewalId?: string } }>('/api/v1/orders', { schema: { body: orderBody } }, async req => engine.order((await auth.user(req)).id, req.body.planId, req.body.operationKey, req.body.renewalId));
-  app.post<{ Params: { id: string }; Body: { event: 'confirm' | 'fail' | 'cancel' } }>('/api/v1/orders/:id/payment', { schema: { params: { type: 'object', required: ['id'], properties: { id: uuid } }, body: { type: 'object', additionalProperties: false, required: ['event'], properties: { event: { enum: ['confirm', 'fail', 'cancel'] } } } } }, async req => engine.payment((await auth.user(req)).id, req.params.id, req.body.event));
-  app.post<{ Params: { id: string } }>('/api/v1/subscriptions/:id/cancel', { schema: { params: { type: 'object', required: ['id'], properties: { id: uuid } } } }, async req => engine.cancel((await auth.user(req)).id, req.params.id));
-  app.get('/api/v1/support', async req => db.supportTicket.findMany({ where: { userId: (await auth.user(req)).id }, orderBy: { createdAt: 'desc' }, take: 100 }));
-  app.post<{ Body: { text: string } }>('/api/v1/support', { schema: { body: { type: 'object', additionalProperties: false, required: ['text'], properties: { text: { type: 'string', minLength: 5, maxLength: 4000 } } } } }, async req => db.supportTicket.create({ data: { userId: (await auth.user(req)).id, text: req.body.text } }));
+  app.get('/api/v1/subscriptions', async req => (await engine.subscriptions((await auth.user(req)).id)).map(publicSubscription));
+  app.get('/api/v1/orders', async req => (await db.order.findMany({ where: { userId: (await auth.user(req)).id }, include: { plan: true, payments: true }, orderBy: { createdAt: 'desc' }, take: 100 })).map(publicOrder));
+  app.post<{ Body: { planId: string; operationKey: string; renewalId?: string } }>('/api/v1/orders', { schema: { body: orderBody } }, async req => publicOrder(await engine.order((await auth.user(req)).id, req.body.planId, req.body.operationKey, req.body.renewalId)));
+  app.post<{ Params: { id: string }; Body: { event: 'confirm' | 'fail' | 'cancel' } }>('/api/v1/orders/:id/payment', { schema: { params: { type: 'object', required: ['id'], properties: { id: uuid } }, body: { type: 'object', additionalProperties: false, required: ['event'], properties: { event: { enum: ['confirm', 'fail', 'cancel'] } } } } }, async req => publicOrder(await engine.payment((await auth.user(req)).id, req.params.id, req.body.event)));
+  app.post<{ Params: { id: string } }>('/api/v1/subscriptions/:id/cancel', { schema: { params: { type: 'object', required: ['id'], properties: { id: uuid } } } }, async req => publicSubscription(await engine.cancel((await auth.user(req)).id, req.params.id)));
+  app.get('/api/v1/support', async req => (await db.supportTicket.findMany({ where: { userId: (await auth.user(req)).id }, orderBy: { createdAt: 'desc' }, take: 100 })).map(ticketView));
   app.get('/api/v1/admin',async req=>{
     await auth.user(req,true);
     const [users,active,orders,servers,occupied,available,errors,telegramErrors,revenue,initial,rentals,plans,settings]=await Promise.all([
@@ -48,15 +52,14 @@ export async function platformRoutes(app: FastifyInstance, db: PrismaClient, con
   });
   app.post<{ Params: { id: string } }>('/api/v1/admin/orders/:id/retry', async req => { await auth.user(req, true); if (!await db.order.count({ where: { id: req.params.id, status: 'PAID' } })) fail(409, 'ORDER_NOT_RETRYABLE'); return engine.fulfill(req.params.id); });
   app.post<{ Params: { id: string } }>('/api/v1/admin/orders/:id/refund', async req => engine.payment((await auth.user(req, true)).id, req.params.id, 'refund', true));
-  app.post<{ Params: { id: string }; Body: { status: string } }>('/api/v1/admin/support/:id', { schema: { body: { type: 'object', additionalProperties: false, required: ['status'], properties: { status: { enum: ['OPEN', 'IN_PROGRESS', 'CLOSED'] } } } } }, async req => { await auth.user(req, true); return db.supportTicket.update({ where: { id: req.params.id }, data: { status: req.body.status } }); });
-  app.post<{ Params: { id: string }; Body: { price: number; durationDays: number; maxUsersPerServer: number; isActive: boolean } }>('/api/v1/admin/plans/:id', { schema: { body: { type: 'object', additionalProperties: false, required: ['price', 'durationDays', 'maxUsersPerServer', 'isActive'], properties: { price: { type: 'integer', minimum: 0, maximum: 10000000 }, durationDays: { type: 'integer', minimum: 1, maximum: 365 }, maxUsersPerServer: { type: 'integer', minimum: 1, maximum: 3 }, isActive: { type: 'boolean' } } } } }, async req => {
+  app.post<{ Params: { id: string }; Body: { price: number; durationDays: number; maxUsersPerServer: number; isActive: boolean } }>('/api/v1/admin/plans/:id', { schema: { body: { type: 'object', additionalProperties: false, required: ['price', 'durationDays', 'maxUsersPerServer', 'isActive'], properties: { price: { type: 'integer', minimum: 0, maximum: 10000000 }, durationDays: { type: 'integer', minimum: 1, maximum: 365 }, maxUsersPerServer: { type: 'integer', minimum: 1, maximum: 4 }, isActive: { type: 'boolean' } } } } }, async req => {
     const actor = await auth.user(req, true);
-    return locked(db, async tx => { const plan = await tx.plan.update({ where: { id: req.params.id }, data: req.body }); await tx.auditLog.create({ data: { actorUserId: actor.id, action: 'admin.plan.updated', entityType: 'plan', entityId: plan.id } }); return plan; });
+    return locked(db, async tx => { if(req.body.maxUsersPerServer===4 && (await tx.setting.findUnique({where:{key:'server.capacity4_approved'}}))?.value!==true) fail(409,'CAPACITY_APPROVAL_REQUIRED'); const plan = await tx.plan.update({ where: { id: req.params.id }, data: req.body }); await tx.auditLog.create({ data: { actorUserId: actor.id, action: 'admin.plan.updated', entityType: 'plan', entityId: plan.id } }); return plan; });
   });
   app.post<{ Body: { key: string; value: number } }>('/api/v1/admin/settings', { schema: { body: { type: 'object', additionalProperties: false, required: ['key', 'value'], properties: { key: { enum: ['server.monthly_cost_minor', 'server.rental_days', 'server.default_capacity'] }, value: { type: 'integer', minimum: 1, maximum: 10000000 } } } } }, async req => {
     const actor = await auth.user(req, true);
-    if (req.body.key === 'server.default_capacity' && req.body.value > 3 || req.body.key === 'server.rental_days' && req.body.value > 365) fail(400, 'SETTING_OUT_OF_RANGE');
-    return locked(db, async tx => { const result = await tx.setting.update({ where: { key: req.body.key }, data: { value: req.body.value } }); await tx.auditLog.create({ data: { actorUserId: actor.id, action: 'admin.setting.updated', entityType: 'setting', entityId: result.id } }); return result; });
+    if (req.body.key === 'server.default_capacity' && req.body.value > 4 || req.body.key === 'server.rental_days' && req.body.value > 365) fail(400, 'SETTING_OUT_OF_RANGE');
+    return locked(db, async tx => { if(req.body.key==='server.default_capacity' && req.body.value===4 && (await tx.setting.findUnique({where:{key:'server.capacity4_approved'}}))?.value!==true) fail(409,'CAPACITY_APPROVAL_REQUIRED'); const result = await tx.setting.update({ where: { key: req.body.key }, data: { value: req.body.value } }); await tx.auditLog.create({ data: { actorUserId: actor.id, action: 'admin.setting.updated', entityType: 'setting', entityId: result.id } }); return result; });
   });
   app.post('/api/v1/telegram/webhook', async (req, reply) => {
     if (!telegram.authentic(String(req.headers['x-telegram-bot-api-secret-token'] ?? ''))) fail(401, 'INVALID_WEBHOOK');

@@ -1,3 +1,4 @@
+import { RELEASE } from '@shared-vps/shared';
 import type { ApiConfig } from '@shared-vps/runtime';
 import type { FastifyInstance } from 'fastify';
 import type { PrismaClient } from '@shared-vps/database';
@@ -32,7 +33,7 @@ export function reliabilityRoutes(app:FastifyInstance,db:PrismaClient,auth:Auth,
       db.server.count({where:{status:'ACTIVE'}}),db.serverSlot.count({where:{status:'OCCUPIED'}}),
     ]);
     if(!cachedWebhook||cachedWebhook.until<Date.now()){let value:unknown={state:'unconfigured'};try{if(config.TELEGRAM_BOT_TOKEN){const s=await runtime.telegram.status();value={state:s.url===`${config.PUBLIC_ORIGIN}/api/v1/telegram/webhook`?'ready':s.url?'mismatch':'missing',pending:s.pending,lastErrorAt:s.lastErrorAt};}}catch{value={state:'unavailable'};}cachedWebhook={until:Date.now()+30000,value};}
-    return {stage:'1.3',demo:true,database:{state:'available',latencyMs:databaseLatencyMs},jobs:jobs.map(x=>({status:x.status,count:x._count._all})),inbox:inbox.map(x=>({status:x.status,count:x._count._all})),oldestDueDelaySeconds:oldest?Math.max(0,Math.floor((now.getTime()-oldest.runAt.getTime())/1000)):0,
+    return {...RELEASE,demo:true,database:{state:'available',latencyMs:databaseLatencyMs},jobs:jobs.map(x=>({status:x.status,count:x._count._all})),inbox:inbox.map(x=>({status:x.status,count:x._count._all})),oldestDueDelaySeconds:oldest?Math.max(0,Math.floor((now.getTime()-oldest.runAt.getTime())/1000)):0,
       workers:workers.map(x=>({...x,stale:now.getTime()-x.lastSeenAt.getTime()>90000})),recoveryErrors,activeUsers:Number(activeUsers[0]?.count??0),activeServers:servers,occupiedSlots:occupied,webhook:cachedWebhook.value,backgroundMode:config.BACKGROUND_MODE};
   });
 }

@@ -1,3 +1,5 @@
+import { instructionText, instructionPlatforms, purchaseGuidance, purchaseSteps, supportCategories, supportStatuses, type SupportCategory } from '@shared-vps/shared';
+import { SupportService } from './support.js';
 import { appLabel, miniAppButton, inlineMainMenu, botStatus, botError } from './bot-ui.js';
 import { randomUUID } from 'node:crypto';
 import { backoff, databaseNow } from './job-queue.js';
@@ -16,7 +18,8 @@ const inline = (items: { text: string; callback_data?: string; web_app?: { url: 
 const back = { text: '← Назад', callback_data: 'menu' };
 export class TelegramGateway {
   private login: BotLogin;
-  constructor(private db: PrismaClient, private config: ApiConfig, private engine: SubscriptionEngine, private transport?: (method: string, body: Record<string, unknown>) => Promise<unknown>) { this.login = new BotLogin(db, config, engine); }
+  private support: SupportService;
+  constructor(private db: PrismaClient, private config: ApiConfig, private engine: SubscriptionEngine, private transport?: (method: string, body: Record<string, unknown>) => Promise<unknown>) { this.login = new BotLogin(db, config, engine); this.support = new SupportService(db); }
   authentic(secret: string) { return Boolean(this.config.TELEGRAM_BOT_TOKEN && this.config.TELEGRAM_WEBHOOK_SECRET && equal(secret, this.config.TELEGRAM_WEBHOOK_SECRET)); }
   async call(method: string, body: Record<string, unknown>) {
     if (this.transport) return this.transport(method, body);
@@ -119,7 +122,7 @@ export class TelegramGateway {
       else if (!renewal && active) { content = 'Подписка уже активна. Для увеличения срока выберите продление.'; markup = inline([[{ text: 'Продлить', callback_data: 'renew' }], [back]]); }
       else {
         const order = await this.engine.order(user.id, plan.id, `telegram:${update.update_id}`, renewal ? last!.id : undefined);
-        content = `${renewal ? 'Продление' : 'Тестовая покупка'}: ${plan.name}\n${order.amount / 100} ${order.currency} / ${order.periodDays} дней\nДенежная операция симулируется, списание 0 ₽. Подтвердить?`;
+        content = `${renewal ? 'Продление' : 'Тестовая покупка'}: ${plan.name}\n${order.amount / 100} ${order.currency} / ${order.periodDays} дней\nДенежная операция симулируется, списание 0 ₽.\n\n${purchaseGuidance}\n${purchaseSteps.map((s,i)=>(i+1)+'. '+s).join('\n')}\nПодтвердить?`;
         markup = inline([[{ text: 'Подтвердить демо', callback_data: `confirm:${order.id}` }], [{ text: 'Отменить заказ', callback_data: `cancel:${order.id}` }], [back]]);
       }
     } else if (text.startsWith('confirm:') || text.startsWith('cancel:')) {
@@ -127,34 +130,53 @@ export class TelegramGateway {
       const order = await this.db.order.findFirst({ where: { id, userId: user.id } });
       if (!order) fail(404, 'ORDER_NOT_FOUND');
       if (order.status === 'AWAITING_PAYMENT' && Date.now() - order.createdAt.getTime() > 1800000) { await this.engine.payment(user.id, id, 'cancel'); content = 'Кнопка устарела. Откройте покупку заново.'; }
-      else { const result = await this.engine.payment(user.id, id, text.startsWith('confirm:') ? 'confirm' : 'cancel'); content = `Тестовый заказ: ${botStatus(result.status)}\n${result.status === 'COMPLETED' ? 'Подписка активирована. Все данные сохранены в PostgreSQL.' : 'Деньги не списывались.'}`; markup = inline([[{ text: 'Моя подписка', callback_data: 'subscription' }], [back]]); }
+      else { const result = await this.engine.payment(user.id, id, text.startsWith('confirm:') ? 'confirm' : 'cancel'); const activated = result.status === 'COMPLETED' && Boolean(await this.db.subscription.count({where:{userId:user.id,status:'ACTIVE',expiresAt:{gt:new Date()},OR:[{orderId:result.id},...(order.renewalId?[{id:order.renewalId}]:[])]}})); content = `Тестовый заказ: ${botStatus(result.status)}\n${activated ? 'Подписка активирована. Откройте пошаговую инструкцию кнопкой ниже.' : 'Деньги не списывались.'}`; markup = inline([[{text:'Инструкция',callback_data:'help'},{ text: 'Моя подписка', callback_data: 'subscription' }], [{text:'Поддержка',callback_data:'support'}], [back]]); }
     } else if (text === buttons[1] || text === 'subscription') {
-      content = last ? `${last.plan.name} · ${botStatus(last.status)}\nНачало: ${last.startedAt?.toISOString().slice(0, 10) ?? '—'}\nОкончание: ${last.expiresAt?.toISOString().slice(0, 10) ?? '—'}\nОсталось: ${Math.max(0, Math.ceil(((last.expiresAt?.getTime() ?? 0) - Date.now()) / 86400000))} дней\nВиртуальный VPS: ${last.serverSlot?.server.externalServerId ?? '—'}\nДемо-доступ: ${last.status === 'ACTIVE' ? last.credentials.find(c => !c.revokedAt)?.demoIdentifier ?? '—' : 'неактивен'}\nЭто не VPN-ключ.` : 'У вас пока нет подписок.';
+      content = last ? `${last.plan.name} · ${botStatus(last.status)}\nНачало: ${last.startedAt?.toISOString().slice(0, 10) ?? '—'}\nОкончание: ${last.expiresAt?.toISOString().slice(0, 10) ?? '—'}\nОсталось: ${Math.max(0, Math.ceil(((last.expiresAt?.getTime() ?? 0) - Date.now()) / 86400000))} дней\nФормат: общая демонстрационная инфраструктура, индивидуальный срок\nДемо-доступ: ${last.status === 'ACTIVE' ? last.credentials.find(c => !c.revokedAt)?.demoIdentifier ?? '—' : 'неактивен'}\nЭто не VPN-ключ.` : 'У вас пока нет подписок.';
       markup = inline([[{ text: 'Продлить', callback_data: 'renew' }, { text: 'Подключиться', callback_data: 'connect' }], [{ text: 'Уведомления', callback_data: 'notifications' }], [back]]);
     } else if (text === buttons[2] || text === 'connect') {
       content = 'Подключение в демо\n1. Проверьте активную подписку.\n2. Откройте её демонстрационный идентификатор.\n3. Настройка реального устройства не требуется: действующих VPN-ключей здесь нет.\nВыберите удобный способ:';
-      markup = inline([[{ text: 'Инструкция в Telegram', callback_data: 'subscription' }], ...(miniAppButton(this.config.PUBLIC_ORIGIN, '/connect') ? [[miniAppButton(this.config.PUBLIC_ORIGIN, '/connect')!]] : []), [back]]);
-    } else if (text === buttons[4] || text === 'help') {
-      content = 'Инструкции'; markup = inline([['Подписка', 'Статус', 'Mini App', 'Продление', 'Вопросы'].map((title, i) => ({ text: title, callback_data: `help:${i}` })), [back]]);
+      markup = inline([[{ text: 'Инструкция в Telegram', callback_data: 'help' }], ...(miniAppButton(this.config.PUBLIC_ORIGIN, '/connect') ? [[miniAppButton(this.config.PUBLIC_ORIGIN, '/connect')!]] : []), [back]]);
+    } else if (text === buttons[4] || text === 'help' || text.startsWith('help:platform:')) {
+      const selected=text.startsWith('help:platform:')?text.split(':')[2]:undefined;
+      content=instructionText(selected && instructionPlatforms.includes(selected as typeof instructionPlatforms[number])?selected:undefined);
+      markup=inline([instructionPlatforms.slice(0,2).map(p=>({text:p,callback_data:'help:platform:'+p})),instructionPlatforms.slice(2).map(p=>({text:p,callback_data:'help:platform:'+p})),[{text:'Моя подписка',callback_data:'subscription'},{text:'Поддержка',callback_data:'support'}],[back]]);
     } else if (text.startsWith('help:')) {
-      content = ['До трёх пользователей используют один виртуальный VPS. Четвёртый создаёт следующий. Всё демонстрационное.', 'Нажмите «Моя подписка»: информация поступает из общей PostgreSQL.', 'Нажмите «Открыть приложение» или /app. В Mini App есть главная, каталог, подписка, продление, подключение, история, поддержка, уведомления и профиль. В чате остаются все быстрые действия.', 'Нажмите «Продлить подписку». Активный срок увеличится от текущей даты окончания; истёкшая подписка получит новое свободное место.', 'Списаний и настоящих VPN-ключей нет. Сайт и бот используют один аккаунт Telegram. Бесплатный сервер может запускаться около минуты.'][Number(text.split(':')[1])] ?? 'Выберите раздел справки.';
+      content = /^help:[0-4]$/.test(text) ? instructionText() : 'Выберите раздел справки.';
       markup = inline([[{ text: 'Все инструкции', callback_data: 'help' }], [back]]);
     } else if (text === buttons[5] || text === 'support') {
-      const tickets = await this.db.supportTicket.findMany({ where: { userId: user.id }, take: 5, orderBy: { createdAt: 'desc' } });
-      content = `Поддержка\n${tickets.map(t => `№${t.number} · ${botStatus(t.status)}`).join('\n') || 'Обращений пока нет.'}`;
-      markup = inline([[{ text: 'Открыть обращение', callback_data: 'support:new' }, { text: 'Обновить статус', callback_data: 'support' }], [back]]);
-    } else if (text === 'support:new') {
-      await this.db.botState.upsert({ where: { userId: user.id }, update: { awaitingSupport: true }, create: { userId: user.id, awaitingSupport: true } });
-      content = 'Введите текст обращения (5–4000 символов). Для выхода нажмите /start.';
+      const tickets=await this.db.supportTicket.findMany({where:{userId:user.id},take:5,orderBy:{createdAt:'desc'}});
+      content='Поддержка\nВыберите обращение, чтобы прочитать ответ и продолжить переписку. Пароли и коды присылать не нужно.';
+      markup=inline([...tickets.map(t=>[{text:'№'+t.number+' · '+(supportStatuses[t.status as keyof typeof supportStatuses]??t.status),callback_data:'support:view:'+t.id}]),[{text:'Новое обращение',callback_data:'support:new'}],[back]]);
+    } else if (text.startsWith('support:view:') || text.startsWith('support:page:')) {
+      const value=text.split(':')[2]??''; if(!/^[0-9a-f-]{36}$/i.test(value))fail(400,'INVALID_BUTTON');
+      const anchor=text.startsWith('support:page:')?await this.db.supportMessage.findFirst({where:{id:value,ticket:{userId:user.id}}}):null;
+      if(text.startsWith('support:page:')&&!anchor)fail(404,'TICKET_NOT_FOUND');
+      const thread=await this.support.thread(user.id,anchor?.ticketId??value,anchor?.id,false,5);
+      content='Обращение №'+thread.ticket.number+' · '+(supportStatuses[thread.ticket.status as keyof typeof supportStatuses]??thread.ticket.status)+'\n'+(supportCategories[thread.ticket.category as SupportCategory]??'Другой вопрос')+'\n\n'+thread.messages.map(m=>(m.authorRole==='ADMIN'?'Поддержка':'Вы')+' · '+m.createdAt.toISOString().slice(0,16)+' UTC\n'+m.text.slice(0,500)+(m.text.length>500?'… Полный текст на сайте.':'')).join('\n\n');
+      markup=inline([...(thread.nextCursor?[[{text:'Ранее',callback_data:'support:page:'+thread.nextCursor}]]:[]),...(thread.ticket.status!=='CLOSED'?[[{text:'Ответить',callback_data:'support:reply:'+thread.ticket.id}],[{text:'Вопрос решён · закрыть',callback_data:'support:close:'+thread.ticket.id}]]:[]),[{text:'Все обращения',callback_data:'support'}],[back]]);
+    } else if (text.startsWith('support:reply:') || text.startsWith('support:close:')) {
+      const id=text.split(':')[2]??''; if(!/^[0-9a-f-]{36}$/i.test(id))fail(400,'INVALID_BUTTON');
+      const thread=await this.support.thread(user.id,id);
+      if(text.startsWith('support:close:')) {await this.support.status(user.id,id,'CLOSED',thread.ticket.status);content='Обращение закрыто. Переписка сохранена.';markup=inline([[{text:'Все обращения',callback_data:'support'}],[back]]);}
+      else {if(thread.ticket.status==='CLOSED')fail(409,'TICKET_CLOSED');await this.db.botState.upsert({where:{userId:user.id},update:{awaitingSupport:true,activeTicketId:id},create:{userId:user.id,awaitingSupport:true,activeTicketId:id}});content='Напишите ответ (1–4000 символов). /start — отмена.';}
+    } else if (text === 'support:new' || text.startsWith('support:category:')) {
+      const category=(text.split(':')[2]??'OTHER') as SupportCategory; if(!(category in supportCategories))fail(400,'INVALID_CATEGORY');
+      await this.db.botState.upsert({where:{userId:user.id},update:{awaitingSupport:true,activeTicketId:null,supportCategory:category},create:{userId:user.id,awaitingSupport:true,supportCategory:category}});
+      content='Тема: '+supportCategories[category]+'.\nВыберите тему и отправьте описание (5–4000 символов). /start — отмена.';
+      markup=inline([...Object.entries(supportCategories).map(([key,title])=>[{text:title,callback_data:'support:category:'+key}]),[back]]);
     } else {
-      const state = await this.db.botState.findUnique({ where: { userId: user.id } });
-      if (state?.awaitingSupport && text.length >= 5 && text.length <= 4000) {
-        const ticket = await this.db.supportTicket.upsert({ where: { operationKey: `telegram:${update.update_id}` }, update: {}, create: { userId: user.id, text, operationKey: `telegram:${update.update_id}` } });
-        await this.db.botState.update({ where: { userId: user.id }, data: { awaitingSupport: false } });
-        content = `Обращение №${ticket.number} сохранено. Статус: ${botStatus(ticket.status)}.`;
-      } else content = 'Выберите действие кнопкой меню. Для обращения введите от 5 до 4000 символов.';
+      const state=await this.db.botState.findUnique({where:{userId:user.id}});
+      if(state?.awaitingSupport && text.length >= (state.activeTicketId?1:5) && text.length<=4000){
+        let id=state.activeTicketId;let number:number;
+        if(id){const thread=await this.support.thread(user.id,id);await this.support.reply(user.id,id,text,'telegram:'+update.update_id);number=thread.ticket.number;}
+        else {const ticket=await this.support.create(user.id,text,state.supportCategory as SupportCategory,'telegram:'+update.update_id);id=ticket.id;number=ticket.number;}
+        await this.db.botState.update({where:{userId:user.id},data:{awaitingSupport:false,activeTicketId:null}});
+        content='Обращение №'+number+' сохранено. Ответ появится в переписке и Telegram, если бот доступен.';
+        markup=inline([[{text:'Открыть обращение',callback_data:'support:view:'+id}],[back]]);
+      } else content='Выберите действие кнопкой меню. Для нового обращения введите от 5 до 4000 символов.';
     }
-    if (text.startsWith('/start') || text === 'menu') await this.db.botState.upsert({ where: { userId: user.id }, update: { awaitingSupport: false }, create: { userId: user.id } });
+    if (text.startsWith('/start') || text === 'menu') await this.db.botState.upsert({ where: { userId: user.id }, update: { awaitingSupport: false, activeTicketId: null }, create: { userId: user.id } });
     return { method: cb ? 'editMessageText' : 'sendMessage', body: { chat_id: sender.id, ...(cb ? { message_id: msg.message_id } : {}), text: content, reply_markup: cb && markup === mainKeyboard ? inlineMainMenu(this.config.PUBLIC_ORIGIN) : markup } };
   }
   async drain(signal?: AbortSignal) {
