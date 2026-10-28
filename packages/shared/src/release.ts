@@ -22,9 +22,11 @@ export function financialScenario(input: FinancialInput) {
   const revenue = price * users; const directCosts = rent; const remainingAfterRent = revenue - directCosts;
   const operatingResult = remainingAfterRent - otherCosts; const afterReserve = operatingResult - reserve;
   const breakEvenUsers = price === 0 ? null : Math.ceil((directCosts + otherCosts + reserve) / price);
+  const closingCash = budget + operatingResult; const spendableCash = Math.max(0, closingCash - reserve);
   return { ...input, revenue, directCosts, remainingAfterRent, operatingResult, afterReserve, breakEvenUsers,
     feasible: breakEvenUsers !== null && breakEvenUsers <= capacity, startupGap: Math.max(0, directCosts + otherCosts - budget),
-    nextMonthNeed: directCosts + otherCosts, nextMonthGap: Math.max(0, directCosts + otherCosts - Math.max(0, operatingResult)),
+    closingCash, spendableCash, nextMonthNeed: directCosts + otherCosts, nextMonthGap: Math.max(0, directCosts + otherCosts - spendableCash),
+    renewalGapFromOperations: Math.max(0, directCosts + otherCosts - Math.max(0, afterReserve)),
     underfill: Array.from({ length: capacity + 1 }, (_, count) => ({ users: count, revenue: count * price, afterReserve: count * price - directCosts - otherCosts - reserve })),
     note: 'Сценарий одного виртуального сервера. Аренда — неподтверждённое допущение, не цена Aeza. Остаток после аренды не является чистой прибылью. Налоги, комиссии и юридические расходы учитываются отдельно.' };
 }
