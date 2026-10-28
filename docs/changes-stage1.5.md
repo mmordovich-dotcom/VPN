@@ -1,0 +1,50 @@
+# Изменения Stage 1.5
+
+База: 2017f96b992c321d408550117a47d152437acd3a. Секреты и production env не включены.
+
+- .github/workflows/axon-ui.yml
+- .github/workflows/verify.yml
+- README.md
+- apps/api/src/background.ts
+- apps/api/src/engine.ts
+- apps/api/src/incidents.ts
+- apps/api/src/modules/plans/routes.ts
+- apps/api/src/notifications.ts
+- apps/api/src/pagination.ts
+- apps/api/src/platform.ts
+- apps/api/src/presenters.ts
+- apps/api/src/readiness-routes.ts
+- apps/api/src/reliability-routes.ts
+- apps/api/src/routes/health.ts
+- apps/api/src/support.ts
+- apps/api/src/telegram.ts
+- apps/api/tests/app.test.ts
+- apps/api/tests/readiness.test.ts
+- apps/web/src/account-lists.ts
+- apps/web/src/admin-lists.ts
+- apps/web/src/axon-ui.ts
+- apps/web/src/readiness-admin.ts
+- apps/web/src/styles/axon.css
+- apps/web/src/support-view.ts
+- apps/web/src/unified.ts
+- docs/aeza-review-stage1.5.md
+- docs/capacity-economics-stage1.5.md
+- docs/changes-stage1.5.md
+- docs/demo-release-1.0.md
+- docs/incidents-stage1.5.md
+- docs/instructions-stage1.5.md
+- docs/preservation-stage1.5.md
+- docs/release-stage1.5.md
+- docs/security-stage1.5.md
+- docs/stage-1.5.md
+- docs/support-stage1.5.md
+- docs/verification-stage1.5.md
+- package.json
+- packages/database/prisma/migrations/20261029000000_release_readiness/migration.sql
+- packages/database/prisma/schema.prisma
+- packages/database/tests/readiness.integration.test.ts
+- packages/shared/src/constants/index.ts
+- packages/shared/src/index.ts
+- packages/shared/src/release.ts
+- packages/shared/src/types/index.ts
+- tests/ui/axon.spec.mjs
