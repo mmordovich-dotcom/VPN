@@ -161,7 +161,7 @@ export class TelegramGateway {
       if(text.startsWith('support:close:')) {await this.support.status(user.id,id,'CLOSED',thread.ticket.status);content='Обращение закрыто. Переписка сохранена.';markup=inline([[{text:'Все обращения',callback_data:'support'}],[back]]);}
       else {if(thread.ticket.status==='CLOSED')fail(409,'TICKET_CLOSED');await this.db.botState.upsert({where:{userId:user.id},update:{awaitingSupport:true,activeTicketId:id},create:{userId:user.id,awaitingSupport:true,activeTicketId:id}});content='Напишите ответ (1–4000 символов). /start — отмена.';}
     } else if (text === 'support:new' || text.startsWith('support:category:')) {
-      const category=(text.split(':')[2]??'OTHER') as SupportCategory; if(!(category in supportCategories))fail(400,'INVALID_CATEGORY');
+      const category=(text.split(':')[2]??'OTHER') as SupportCategory; if(!Object.hasOwn(supportCategories,category))fail(400,'INVALID_CATEGORY');
       await this.db.botState.upsert({where:{userId:user.id},update:{awaitingSupport:true,activeTicketId:null,supportCategory:category},create:{userId:user.id,awaitingSupport:true,supportCategory:category}});
       content='Тема: '+supportCategories[category]+'.\nВыберите тему и отправьте описание (5–4000 символов). /start — отмена.';
       markup=inline([...Object.entries(supportCategories).map(([key,title])=>[{text:title,callback_data:'support:category:'+key}]),[back]]);

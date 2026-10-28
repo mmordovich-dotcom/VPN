@@ -11,7 +11,7 @@ export class IncidentService {
     return locked(this.db, async tx => {
       await actor(tx, adminId, true); if (serverId && !await tx.server.count({ where: { id: serverId } })) fail(404, 'SERVER_NOT_FOUND');
       const prior = await tx.serviceIncident.findUnique({ where: { operationKey: key } }); if (prior) { if (prior.component !== component || prior.serverId !== (serverId ?? null)) fail(409, 'KEY_REUSED'); return prior; }
-      const now = await databaseNow(tx); const incident = await tx.serviceIncident.create({ data: { operationKey: key, component, serverId, source: 'DEMO', startedAt: now } });
+      const now = await databaseNow(tx); const incident = await tx.serviceIncident.create({ data: { operationKey: key, component, serverId: serverId ?? null, source: 'DEMO', startedAt: now } });
       await recordAudit(tx, adminId, 'incident.created', 'service_incident', incident.id, { component, source: 'DEMO' }); return incident;
     });
   }

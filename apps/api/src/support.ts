@@ -12,11 +12,12 @@ export const ticketView = (t: { id: string; number: number; text: string; catego
 export class SupportService {
   constructor(private db: PrismaClient) {}
   async create(userId: string, textInput: string, category: SupportCategory, operationKey: string) {
-    const text = messageText(textInput, 5); if (!(category in supportCategories)) fail(400, 'INVALID_CATEGORY');
+    const text = messageText(textInput, 5); if (!Object.hasOwn(supportCategories,category)) fail(400, 'INVALID_CATEGORY');
     const key = 'support:' + userId + ':' + operation(operationKey);
     return locked(this.db, async tx => {
       await actor(tx, userId); const prior = await tx.supportTicket.findUnique({ where: { operationKey: key } });
       if (prior) { if (prior.userId !== userId || prior.text !== text || prior.category !== category) fail(409, 'KEY_REUSED'); return ticketView(prior); }
+      if(await tx.supportTicket.count({where:{userId,createdAt:{gte:new Date(Date.now()-3600000)}}})>=5)fail(429,'RATE_LIMITED');
       const ticket = await tx.supportTicket.create({ data: { userId, text, category, operationKey: key } });
       await tx.supportMessage.create({ data: { ticketId: ticket.id, authorId: userId, authorRole: 'USER', text, operationKey: key } });
       await recordAudit(tx, userId, 'support.created', 'support_ticket', ticket.id, { category }); return ticketView(ticket);
@@ -38,6 +39,7 @@ export class SupportService {
       await actor(tx, userId, admin); const ticket = await tx.supportTicket.findFirst({ where: { id: ticketId, ...(admin ? {} : { userId }) } }); if (!ticket) fail(404, 'TICKET_NOT_FOUND');
       const prior = await tx.supportMessage.findUnique({ where: { operationKey: key } }); if (prior) { if (prior.ticketId !== ticketId || prior.text !== text || prior.authorRole !== (admin ? 'ADMIN' : 'USER')) fail(409, 'KEY_REUSED'); return { id: prior.id }; }
       if (ticket.status === 'CLOSED') fail(409, 'TICKET_CLOSED');
+      if(await tx.supportMessage.count({where:{authorId:userId,createdAt:{gte:new Date(Date.now()-60000)}}})>=30)fail(429,'RATE_LIMITED');
       const message = await tx.supportMessage.create({ data: { ticketId, authorId: userId, authorRole: admin ? 'ADMIN' : 'USER', text, operationKey: key } });
       await tx.supportTicket.update({ where: { id: ticketId }, data: { status: admin ? 'WAITING_USER' : 'WAITING_ADMIN', updatedAt: new Date() } });
       await recordAudit(tx, userId, admin ? 'support.admin_replied' : 'support.user_replied', 'support_ticket', ticketId, { messageId: message.id });
@@ -46,7 +48,7 @@ export class SupportService {
     });
   }
   async status(userId: string, ticketId: string, status: SupportStatus, expectedStatus?: string, admin = false) {
-    if (!(status in supportStatuses)) fail(400, 'INVALID_STATUS'); if (!admin && status !== 'CLOSED') fail(403, 'ADMIN_REQUIRED');
+    if (!Object.hasOwn(supportStatuses,status)) fail(400, 'INVALID_STATUS'); if (!admin && status !== 'CLOSED') fail(403, 'ADMIN_REQUIRED');
     return locked(this.db, async tx => {
       await actor(tx, userId, admin); const ticket = await tx.supportTicket.findFirst({ where: { id: ticketId, ...(admin ? {} : { userId }) } }); if (!ticket) fail(404, 'TICKET_NOT_FOUND');
       if (ticket.status === status) return ticketView(ticket); if (expectedStatus && ticket.status !== expectedStatus) fail(409, 'STALE_TICKET');
