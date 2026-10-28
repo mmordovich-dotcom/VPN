@@ -13,7 +13,8 @@ export class SupportService {
   constructor(private db: PrismaClient) {}
   async create(userId: string, textInput: string, category: SupportCategory, operationKey: string) {
     const text = messageText(textInput, 5); if (!Object.hasOwn(supportCategories,category)) fail(400, 'INVALID_CATEGORY');
-    const key = 'support:' + userId + ':' + operation(operationKey);
+    // Keep the scoped key within the existing varchar(160): 2 + 36 + 1 + 120 = 159.
+    const key = 's:' + userId + ':' + operation(operationKey);
     return locked(this.db, async tx => {
       await actor(tx, userId); const prior = await tx.supportTicket.findFirst({ where: { OR: [{ operationKey: key }, ...(/^telegram:\d+$/.test(operationKey) ? [{ operationKey, userId }] : [])] } });
       if (prior) { if (prior.userId !== userId || prior.text !== text || prior.category !== category) fail(409, 'KEY_REUSED'); return ticketView(prior); }
