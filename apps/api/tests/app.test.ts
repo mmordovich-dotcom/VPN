@@ -15,7 +15,7 @@ describe('API foundation', () => {
     try {
       const response = await app.inject('/health');
       expect(response.statusCode).toBe(200);
-      expect(response.json()).toEqual({ status: 'ok', service: 'shared-vps-api', stage: '1.1' });
+      expect(response.json()).toEqual({ status: 'ok', service: 'shared-vps-api', stage: '1.5', version: '0.5.0', demo: true });
       expect(db.$queryRaw).not.toHaveBeenCalled();
     } finally { await app.close(); }
   });
@@ -33,7 +33,7 @@ describe('API foundation', () => {
     const app = await buildApp(config, fakeDb());
     try {
       const response = await app.inject('/api/v1/system/info');
-      expect(response.json()).toMatchObject({ name: 'Shared VPS Platform', stage: '1.1', mode: 'demo', components: { serverProvider: 'mock' } });
+      expect(response.json()).toMatchObject({ name: 'Shared VPS Platform', stage: '1.5', mode: 'demo', components: { serverProvider: 'mock' } });
       expect(response.body).not.toContain('postgresql:');
       expect((await app.inject('/api/v1/admin')).statusCode).toBe(401);
     } finally { await app.close(); }

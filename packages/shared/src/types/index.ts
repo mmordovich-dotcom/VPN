@@ -1,4 +1,4 @@
-export interface HealthInfo { status: 'ok'; service: 'shared-vps-api'; stage: '1.1' }
+export interface HealthInfo { status: 'ok'; service: 'shared-vps-api'; stage: string; version?: string; demo?: boolean }
 export interface SystemInfo {
   name: string;
   stage: string;

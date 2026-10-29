@@ -88,6 +88,9 @@ model User {
   auditLogs     AuditLog[]
   sessions Session[]
   tickets SupportTicket[]
+  supportMessages SupportMessage[]
+  incidentObservations IncidentObservation[]
+  compensations SubscriptionCompensation[]
   botState BotState?
   loginRequests LoginRequest[]
   loginGrants LoginGrant[]
@@ -190,6 +193,7 @@ model Server {
   createdAt        DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt        DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
   slots            ServerSlot[]
+  incidents ServiceIncident[]
 
   @@unique([provider, externalServerId])
   @@index([status, expiresAt])
@@ -229,6 +233,7 @@ model Subscription {
   serverSlot   ServerSlot?        @relation(fields: [serverSlotId], references: [id], onDelete: Restrict)
   credentials  AccessCredential[]
   renewals Order[] @relation("Renewals")
+  compensations SubscriptionCompensation[]
 
   @@unique([orderId, userId, planId])
   @@index([userId, status])
@@ -297,6 +302,12 @@ model AuthReplay {
   @@map("auth_replays")
 }
 model SupportTicket {
+  category String @default("OTHER") @db.VarChar(32)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  messages SupportMessage[]
+  incidentId String? @map("incident_id") @db.Uuid
+  incident ServiceIncident? @relation(fields: [incidentId], references: [id], onDelete: Restrict)
+  escalations ProviderEscalation[]
   operationKey String? @unique @map("operation_key") @db.VarChar(160)
   id String @id @default(uuid()) @db.Uuid
   number Int @unique @default(autoincrement())
@@ -313,6 +324,8 @@ model SupportTicket {
 model BotState {
   userId String @id @map("user_id") @db.Uuid
   awaitingSupport Boolean @default(false) @map("awaiting_support")
+  supportCategory String @default("OTHER") @map("support_category") @db.VarChar(32)
+  activeTicketId String? @map("active_ticket_id") @db.Uuid
   user User @relation(fields: [userId], references: [id], onDelete: Restrict)
   @@map("bot_states")
 }
@@ -427,4 +440,89 @@ model WorkerHeartbeat {
   lastError String? @map("last_error") @db.VarChar(64)
   @@index([lastSeenAt])
   @@map("worker_heartbeats")
+}
+
+model SupportMessage {
+  id String @id @default(uuid()) @db.Uuid
+  ticketId String @map("ticket_id") @db.Uuid
+  authorId String @map("author_id") @db.Uuid
+  authorRole String @map("author_role") @db.VarChar(16)
+  text String @db.VarChar(4000)
+  operationKey String @unique @map("operation_key") @db.VarChar(180)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  ticket SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Restrict)
+  author User @relation(fields: [authorId], references: [id], onDelete: Restrict)
+  @@index([ticketId, createdAt, id])
+  @@map("support_messages")
+}
+model ServiceIncident {
+  id String @id @default(uuid()) @db.Uuid
+  operationKey String @unique @map("operation_key") @db.VarChar(180)
+  component String @db.VarChar(32)
+  serverId String? @map("server_id") @db.Uuid
+  source String @default("DEMO") @db.VarChar(16)
+  status String @default("SUSPECTED") @db.VarChar(16)
+  diagnosis String @default("UNKNOWN") @db.VarChar(32)
+  startedAt DateTime @default(now()) @map("started_at") @db.Timestamptz(3)
+  confirmedAt DateTime? @map("confirmed_at") @db.Timestamptz(3)
+  resolvedAt DateTime? @map("resolved_at") @db.Timestamptz(3)
+  lastCheckedAt DateTime? @map("last_checked_at") @db.Timestamptz(3)
+  lastSuccessAt DateTime? @map("last_success_at") @db.Timestamptz(3)
+  lastResult String @default("UNKNOWN") @map("last_result") @db.VarChar(16)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  server Server? @relation(fields: [serverId], references: [id], onDelete: Restrict)
+  observations IncidentObservation[]
+  tickets SupportTicket[]
+  escalations ProviderEscalation[]
+  compensations SubscriptionCompensation[]
+  @@index([status, startedAt])
+  @@index([serverId, startedAt])
+  @@map("service_incidents")
+}
+model IncidentObservation {
+  id String @id @default(uuid()) @db.Uuid
+  incidentId String @map("incident_id") @db.Uuid
+  operationKey String @unique @map("operation_key") @db.VarChar(180)
+  result String @db.VarChar(16)
+  checkedAt DateTime @default(now()) @map("checked_at") @db.Timestamptz(3)
+  actorId String @map("actor_id") @db.Uuid
+  actor User @relation(fields: [actorId], references: [id], onDelete: Restrict)
+  incident ServiceIncident @relation(fields: [incidentId], references: [id], onDelete: Restrict)
+  @@index([incidentId, checkedAt, id])
+  @@map("incident_observations")
+}
+model ProviderEscalation {
+  id String @id @default(uuid()) @db.Uuid
+  ticketId String @map("ticket_id") @db.Uuid
+  incidentId String @map("incident_id") @db.Uuid
+  draft String @db.VarChar(4000)
+  reviewedHash String? @map("reviewed_hash") @db.VarChar(64)
+  status String @default("DRAFT") @db.VarChar(32)
+  providerReply String? @map("provider_reply") @db.VarChar(4000)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  ticket SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Restrict)
+  incident ServiceIncident @relation(fields: [incidentId], references: [id], onDelete: Restrict)
+  @@unique([ticketId, incidentId])
+  @@map("provider_escalations")
+}
+model SubscriptionCompensation {
+  id String @id @default(uuid()) @db.Uuid
+  incidentId String @map("incident_id") @db.Uuid
+  subscriptionId String @map("subscription_id") @db.Uuid
+  actorId String @map("actor_id") @db.Uuid
+  operationKey String @unique @map("operation_key") @db.VarChar(180)
+  hours Int
+  reason String @db.VarChar(500)
+  previousExpiry DateTime @map("previous_expiry") @db.Timestamptz(3)
+  newExpiry DateTime @map("new_expiry") @db.Timestamptz(3)
+  windowStart DateTime @map("window_start") @db.Timestamptz(3)
+  windowEnd DateTime @map("window_end") @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  incident ServiceIncident @relation(fields: [incidentId], references: [id], onDelete: Restrict)
+  subscription Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Restrict)
+  actor User @relation(fields: [actorId], references: [id], onDelete: Restrict)
+  @@unique([incidentId, subscriptionId])
+  @@index([subscriptionId, createdAt])
+  @@map("subscription_compensations")
 }

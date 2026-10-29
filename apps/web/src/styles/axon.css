@@ -24,3 +24,6 @@ html[data-mini-app=true] body{min-height:var(--tg-height,100dvh)}
 
 /* Clip the skip link until keyboard focus, including full-page browser captures. */
 .skip-link{top:12px;clip-path:inset(50%)}.skip-link:focus{clip-path:none}
+
+/* Stage 1.5: focused additions, existing AXON layout retained. */
+.thread-messages{display:grid;gap:12px;margin:24px 0}.thread-message{border:1px solid var(--line);border-radius:16px;padding:16px;min-width:0}.thread-message p,.preserve-lines{white-space:pre-wrap;overflow-wrap:anywhere}.staff-message{background:var(--surface)}.incident-history{padding-inline-start:24px;overflow-wrap:anywhere}#readiness-admin details+details,#readiness-admin section+details{margin-top:20px}#readiness-admin input,#readiness-admin textarea,#readiness-admin select{max-width:100%;min-width:0}#support-thread form{margin-block:20px}#readiness-result{scroll-margin-bottom:120px}

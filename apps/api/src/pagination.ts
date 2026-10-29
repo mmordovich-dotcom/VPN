@@ -5,7 +5,7 @@ export type ListQuery = { limit?: number; cursor?: string; search?: string; stat
 export const listSchema = { type:'object',additionalProperties:false,properties:{limit:{type:'integer',minimum:1,maximum:50,default:20},cursor:{type:'string',maxLength:1024},search:{type:'string',maxLength:80},status:{type:'string',maxLength:32},sort:{enum:['newest','oldest'],default:'newest'},includeTotal:{type:'boolean',default:false}} } as const;
 export const resources = ['users','orders','subscriptions','servers','tickets','events','jobs'] as const;
 export type Resource = typeof resources[number];
-const allowedStatuses: Record<Resource,readonly string[]> = {users:['ACTIVE','BLOCKED','ARCHIVED'],orders:['AWAITING_PAYMENT','PAID','PROCESSING','COMPLETED','FAILED','CANCELLED'],subscriptions:['PENDING','ACTIVE','SUSPENDED','EXPIRED','CANCELLED'],servers:['PROVISIONING','ACTIVE','SUSPENDED','FAILED','TERMINATED'],tickets:['OPEN','IN_PROGRESS','CLOSED'],events:[],jobs:['PENDING','PROCESSING','DONE','DEAD','SKIPPED']};
+const allowedStatuses: Record<Resource,readonly string[]> = {users:['ACTIVE','BLOCKED','ARCHIVED'],orders:['AWAITING_PAYMENT','PAID','PROCESSING','COMPLETED','FAILED','CANCELLED'],subscriptions:['PENDING','ACTIVE','SUSPENDED','EXPIRED','CANCELLED'],servers:['PROVISIONING','ACTIVE','SUSPENDED','FAILED','TERMINATED'],tickets:['OPEN','WAITING_ADMIN','IN_PROGRESS','WAITING_PROVIDER','WAITING_USER','CLOSED'],events:[],jobs:['PENDING','PROCESSING','DONE','DEAD','SKIPPED']};
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 type Row = { id:string;createdAt:Date } & Record<string,unknown>;
 type Delegate = {findMany(args:Record<string,unknown>):Promise<Row[]>;count(args:Record<string,unknown>):Promise<number>};
@@ -28,7 +28,7 @@ export async function listRecords(db:PrismaClient,resource:Resource,query:ListQu
     orders:{id:true,userId:true,status:true,amount:true,currency:true,lastError:true,createdAt:true,payments:{take:5,orderBy:{createdAt:'desc'},select:{status:true}}},
     subscriptions:{id:true,userId:true,status:true,expiresAt:true,createdAt:true,plan:{select:{name:true}}},
     servers:{id:true,externalServerId:true,status:true,capacity:true,expiresAt:true,createdAt:true,slots:{take:100,orderBy:{slotNumber:'asc'},select:{slotNumber:true,status:true}}},
-    tickets:{id:true,userId:true,number:true,text:true,status:true,createdAt:true},
+    tickets:{id:true,userId:true,number:true,text:true,category:true,status:true,createdAt:true,updatedAt:true},
     events:{id:true,actorUserId:true,action:true,entityType:true,entityId:true,createdAt:true},
     jobs:{id:true,kind:true,key:true,status:true,attempts:true,maxAttempts:true,runAt:true,leaseUntil:true,lastError:true,createdAt:true,finishedAt:true},
   };
