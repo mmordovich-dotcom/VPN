@@ -7,6 +7,7 @@
 - apps/api/src/auth.ts
 - apps/api/src/bot-ui.ts
 - apps/api/src/platform.ts
+- apps/api/src/support.ts
 - apps/api/src/telegram-errors.ts
 - apps/api/src/telegram.ts
 - apps/api/tests/app.test.ts
@@ -25,6 +26,7 @@
 - package.json
 - packages/database/tests/axon.integration.test.ts
 - packages/database/tests/readiness.integration.test.ts
+- packages/database/tests/reliability.integration.test.ts
 - packages/database/tests/telegram-first.integration.test.ts
 - packages/database/tests/unified.integration.test.ts
 - packages/shared/src/index.ts

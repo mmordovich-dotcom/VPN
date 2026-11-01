@@ -31,3 +31,5 @@ Telegram launch hints только загружают SDK. Для пользов
 
 ## Сохранённые границы
 SubscriptionEngine, schema/migrations, queue/worker, уведомления и провайдеры не переписаны. Вместимость 3 / gate 4 false, цены и данные production не менялись. Нет новых проектов/ботов/сервисов, платных ресурсов, реальных платежей/VPS/VPN/Aeza.
+
+Официальные возможности: [InlineKeyboardButton / styles](https://core.telegram.org/bots/api#inlinekeyboardbutton), [ReplyKeyboardRemove](https://core.telegram.org/bots/api#replykeyboardremove), [answerCallbackQuery](https://core.telegram.org/bots/api#answercallbackquery), [editMessageText](https://core.telegram.org/bots/api#editmessagetext). Проверено по действующему Bot API 01.11.2026. Необязательный style не меняет семантику callback или web_app.
