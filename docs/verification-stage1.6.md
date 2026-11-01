@@ -1,17 +1,17 @@
 # Проверки Stage 1.6
-Первый полный зелёный коммит: 9820f08038e51078c74bfe3ff97e40b8bd4167cb (01.11.2026, Asia/Hovd). 105 unit + 100 PostgreSQL integration + 17 Chromium browser = **222 PASS**. Окончательный head после записи этого отчёта проверяется перед передачей владельцу; точный SHA и текущий CI приведены также в [PR №5](https://github.com/mmordovich-dotcom/VPN/pull/5/checks). Stage 1.6 не опубликована.
+Полный зелёный прогон реализации: af1e6542d4268537285e7697016e1086eb8457c2 (01.11.2026, Asia/Hovd). 105 unit + 101 PostgreSQL integration + 18 Chromium browser = **224 PASS**. Окончательный head после записи этого отчёта проверяется перед передачей владельцу; точный SHA и текущий CI приведены также в [PR №5](https://github.com/mmordovich-dotcom/VPN/pull/5/checks). Stage 1.6 не опубликована.
 
 | Проверка | Результат | Доказательство |
 |---|---|---|
-| Build / typecheck | PASS | [Verify foundation](https://github.com/mmordovich-dotcom/VPN/actions/runs/41297987116), job 124822826457 |
+| Build / typecheck | PASS | [Verify foundation](https://github.com/mmordovich-dotcom/VPN/actions/runs/41298817336), job 124825305671 |
 | Unit | 105 PASS, 18 suites | тот же run |
-| PostgreSQL integration | 100 PASS, 7 suites | тот же run, изолированные CI schemas |
+| PostgreSQL integration | 101 PASS, 7 suites | тот же run, изолированные CI schemas |
 | Prisma validation | PASS | The schema at prisma/schema.prisma is valid |
 | Production web / artifact | PASS | нет server secrets, loopback fallback или local business state |
 | Cloud validation | PASS | официальный Render YAML schema / commands / workflow safety |
-| Chromium browser | 17 PASS | [AXON browser checks](https://github.com/mmordovich-dotcom/VPN/actions/runs/41297987146), job 124822796415 |
+| Chromium browser | 18 PASS | [AXON browser checks](https://github.com/mmordovich-dotcom/VPN/actions/runs/41298817322), job 124825305743 |
 
-Добавлены 12 unit, 17 integration и 7 browser сценариев поверх 186 сценариев Stage 1.5. Визуально просмотрены собранные тёмная/светлая desktop-витрины, мобильная витрина 320 px, Mini App и preview inline-меню. Снимки приложены к PR; CI artifact axon-browser-proof хранится 7 дней.
+Добавлены 12 unit, 18 integration и 8 browser сценариев поверх 186 сценариев Stage 1.5. Визуально просмотрены собранные тёмная/светлая desktop-витрины, мобильная витрина 320 px, Mini App и preview inline-меню. Снимки приложены к PR; CI artifact axon-browser-proof хранится 7 дней.
 
 Первый прогон выявил и исправил ограничение SupportService.thread: для полного текста в чате нужен разрешённый bounded page size 1 наряду с прежними 5/30. В старых тестах уточнены отдельно единственная отправка удаления клавиатуры и единственная отправка inline-меню при сбое DB acknowledgement, а legacy confirmation учитывает сохранение важного сообщения через sendMessage. Новый браузерный тест исправлен на фактический путь Профиль → Поддержка. Проверки не отключались.
 
@@ -30,3 +30,5 @@
 
 ## Границы проверки
 Настоящие Telegram Android/iOS/Desktop и системная экранная клавиатура не считаются проверенными через Chromium/SDK fixtures. Нативные цвета и размеры кнопок определяет клиент. Screenshot bot menu preview — визуализация фактического Bot API payload, не снимок настоящего Telegram. Реальные вход/покупка/поддержка/уведомления новой версии требуют отдельной приёмки после согласованного выпуска.
+
+Отдельно проверены отмена через существующий engine с предварительным предупреждением, повтором и чужим владельцем; Android 13 / Pixel и iOS 17 / iPhone user-agent, touch и viewport profiles в Chromium. Это эмуляция запуска/адаптивности/SDK, не настоящий Android, Safari/WebKit, системная клавиатура или живой Telegram. Desktop SDK scenarios также выполняются в Chromium. Скриншоты с искусственным HTML в тексте обращения демонстрируют escaping, а не реальное содержимое пользователя.
