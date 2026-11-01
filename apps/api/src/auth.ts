@@ -43,6 +43,7 @@ export async function validateLoginJwt(token: string, audience: string, nonce: s
     return String(claims.id);
   } catch { return fail(401, 'INVALID_LOGIN'); }
 }
+const MINI_APP_SESSION='miniapp:v1';
 export class Auth {
   constructor(private db: PrismaClient, private config: ApiConfig, private engine: SubscriptionEngine) {}
   cookieName() { return this.config.NODE_ENV === 'production' ? '__Host-sharedvps' : 'sharedvps'; }
@@ -60,6 +61,11 @@ export class Auth {
     if (admin && session.user.role !== 'ADMIN') return fail(403, 'ADMIN_REQUIRED');
     return session.user;
   }
+  async context(req:FastifyRequest) {
+    const user=await this.user(req);
+    const miniApp=Boolean(await this.db.session.count({where:{tokenHash:digest(this.token(req)),userId:user.id,expiresAt:{gt:new Date()},nonce:MINI_APP_SESSION}}));
+    return {id:user.id,role:user.role,miniApp};
+  }
   async challenge(reply: FastifyReply) {
     if (!this.config.TELEGRAM_LOGIN_CLIENT_ID) fail(503, 'LOGIN_NOT_CONFIGURED');
     const token = randomBytes(32).toString('base64url'); const nonce = randomBytes(32).toString('hex');
@@ -74,7 +80,7 @@ export class Auth {
     if (body.initData) { telegramId = validateInitData(body.initData, this.config.TELEGRAM_BOT_TOKEN); replayHash = digest(body.initData); }
     else {
       const session = await this.db.session.findUnique({ where: { tokenHash } });
-      if (!session?.nonce || session.expiresAt < new Date() || !body.idToken || !this.config.TELEGRAM_LOGIN_CLIENT_ID) return fail(401, 'INVALID_LOGIN');
+      if (!session?.nonce || session.nonce === MINI_APP_SESSION || session.expiresAt < new Date() || !body.idToken || !this.config.TELEGRAM_LOGIN_CLIENT_ID) return fail(401, 'INVALID_LOGIN');
       telegramId = await validateLoginJwt(body.idToken, this.config.TELEGRAM_LOGIN_CLIENT_ID, session.nonce);
       replayHash = digest(body.idToken);
     }
@@ -86,10 +92,10 @@ export class Auth {
       await this.db.$transaction(async tx => {
         await tx.authReplay.create({ data: { hash: replayHash, expiresAt: new Date(Date.now() + 600000) } });
         if (!body.initData) { const removed = await tx.session.deleteMany({ where: { tokenHash, nonce: { not: null } } }); if (!removed.count) fail(401, 'LOGIN_REPLAY'); }
-        await tx.session.create({ data: { tokenHash: digest(token), userId: user.id, expiresAt: new Date(Date.now() + 604800000) } });
+        await tx.session.create({ data: { tokenHash: digest(token), userId: user.id, nonce:body.initData?MINI_APP_SESSION:null, expiresAt: new Date(Date.now() + 604800000) } });
       });
     } catch { return fail(401, 'LOGIN_REPLAY'); }
-    this.cookie(reply, token); return { id: user.id, role: user.role };
+    this.cookie(reply, token); return { id: user.id, role: user.role, miniApp:Boolean(body.initData) };
   }
 }
 
