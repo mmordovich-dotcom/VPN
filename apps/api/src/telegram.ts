@@ -83,7 +83,7 @@ export class TelegramGateway {
       markup = inline([[{ text: 'Подтвердить вход', callback_data: `login:yes:${request.requestId}` }], [{ text: 'Отменить вход', callback_data: `login:no:${request.requestId}` }]]);
     } else if (action.type === 'CONFIRM' || action.type === 'CANCEL') {
       await this.login.confirm(action.requestId, String(senderId), action.type === 'CONFIRM');
-      text = action.type === 'CONFIRM' ? 'Вход подтверждён. Вернитесь в тот же браузер: личный кабинет откроется автоматически.' : 'Вход отменён. Можно создать новый запрос на сайте.';
+      text = action.type === 'CONFIRM' ? 'Вход подтверждён. Вернитесь в тот же браузер: разрешённый раздел откроется автоматически. Пользовательские функции доступны в Telegram.' : 'Вход отменён. Можно создать новый запрос на сайте.';
     } else if (action.type === 'LINK' || action.type === 'CODE') {
       const credential = await this.login.issue(String(senderId), action.type, `telegram:${update.update_id}`);
       if (!credential) text = 'Запрос уже обработан. Для новой ссылки нажмите /login, для нового кода — /code.';
@@ -91,7 +91,7 @@ export class TelegramGateway {
         text = `Код входа: ${credential.code}\nДействует 5 минут, используется один раз. Введите его только на ${this.config.PUBLIC_ORIGIN}. Не пересылайте код и не сообщайте его другим людям. Новый код отменит предыдущий.`;
         markup = inline([[{ text: 'Получить новый код', callback_data: 'login:code' }], [back]]);
       } else {
-        text = 'Откройте личный кабинет по одноразовой ссылке в течение 3 минут. На сайте нажмите «Продолжить», затем подтвердите вход здесь, сверив число. Не пересылайте ссылку.';
+        text = 'Продолжите вход в браузере по одноразовой ссылке в течение 3 минут. Пользовательские функции сейчас доступны в Telegram, браузерная панель предназначена для администратора. На сайте нажмите «Продолжить», затем подтвердите вход здесь, сверив число. Не пересылайте ссылку.';
         markup = inline([[{ text: 'Открыть личный кабинет', url: credential.url }], [{ text: 'Новая ссылка', callback_data: 'login:link' }], [back]]);
       }
     } else text = 'Запрос входа недействителен. Начните вход заново на сайте.';
