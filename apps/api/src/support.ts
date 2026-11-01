@@ -25,7 +25,7 @@ export class SupportService {
     });
   }
   async thread(userId: string, ticketId: string, cursor?: string, admin = false, limit = 30) {
-    if(![5,30].includes(limit))fail(400,'INVALID_PAGE');
+    if(![1,5,30].includes(limit))fail(400,'INVALID_PAGE');
     return this.db.$transaction(async tx => {
       await actor(tx, userId, admin); const ticket = await tx.supportTicket.findFirst({ where: { id: ticketId, ...(admin ? {} : { userId }) } }); if (!ticket) fail(404, 'TICKET_NOT_FOUND');
       let anchor: { id: string; createdAt: Date } | null = null;
