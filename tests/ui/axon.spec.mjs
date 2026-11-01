@@ -16,6 +16,7 @@ const plan={id:'22222222-2222-4222-8222-222222222222',name:'Basic',price:17000,c
 function subscription(){return {id:'33333333-3333-4333-8333-333333333333',userId:uid,planId:plan.id,plan,status:'ACTIVE',startedAt:new Date().toISOString(),expiresAt:new Date(Date.now()+30*86400000).toISOString(),credentials:[{demoIdentifier:'demo:axon:fixture',revokedAt:null}],serverSlot:{server:{externalServerId:'demo:vps:fixture'}}};}
 async function fixtures(page,options={}){
   let logged=options.logged!==false;let sub=options.empty?null:subscription();let preference={remindersEnabled:false,updatesEnabled:true};let mismatch=Boolean(options.mismatch);
+  if(options.mini)await page.addInitScript(()=>{window.Telegram={WebApp:{initData:'signed-fixture-only'}};});
   const role=options.admin?'ADMIN':'USER';const requests=[];const errors=[];const unexpected=[];
   page.on('pageerror',error=>errors.push(error.message));
   await page.route('https://telegram.org/js/telegram-web-app.js*',async route=>{
@@ -27,13 +28,14 @@ async function fixtures(page,options={}){
     const request=route.request();const url=new URL(request.url());const path=url.pathname.slice('/api/v1'.length);const method=request.method();const body=method==='POST'?request.postDataJSON():undefined;
     requests.push({path,query:url.search,method,body,headers:request.headers()});
     const json=(value,status=200)=>route.fulfill({status,contentType:'application/json',body:JSON.stringify(value)});
-    if(path==='/auth/config')return json({botUsername:'vpnaxon_bot',loginEnabled:true,loginMode:'bot',stage:'1.5',demo:true});
-    if(path==='/me')return json(logged?{id:uid,role}:{error:'LOGIN_REQUIRED'},logged?200:401);
+    if(path==='/auth/config')return json({botUsername:'vpnaxon_bot',loginEnabled:true,loginMode:'bot',stage:'1.6',demo:true,publicWebMode:options.landing?'landing':'full'});
+    if(path==='/me')return json(logged?{id:uid,role,miniApp:options.miniVerified!==false&&Boolean(options.mini)}:{error:'LOGIN_REQUIRED'},logged?200:401);
     if(path==='/plans')return json([plan]);
     if(path==='/auth/telegram'){
+      if(options.invalidMini)return json({error:'INVALID_INIT_DATA'},401);
       if(mismatch&&logged)return json({error:'AUTH_LOGOUT_FIRST'},409);
       if(options.replay&&logged)return json({error:'LOGIN_REPLAY'},401);
-      logged=true;return json({id:uid,role});
+      logged=true;return json({id:uid,role,miniApp:true});
     }
     if(path==='/auth/logout'){logged=false;mismatch=false;return json({ok:true});}
     if(path==='/auth/bot/request')return json({requestId:'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',displayCode:'123456',expiresAt:new Date(Date.now()+300000).toISOString(),deepLink:'https://t.me/vpnaxon_bot?start=login_'+'A'.repeat(43)});
@@ -88,7 +90,7 @@ test('desktop public AXON, theme and accessible login fallback',async({page})=>{
   await expect(page.getByRole('heading',{name:'Ваше пространство.'})).toBeVisible();expect(f.requests.find(x=>x.path==='/auth/code')?.headers['x-shared-vps']).toBe('1');expect(f.errors).toEqual([]);expect(f.unexpected).toEqual([]);
 });
 test('mobile Mini App purchase, renewal, settings and native navigation',async({page})=>{
-  await page.setViewportSize({width:390,height:844});const f=await fixtures(page,{logged:false,mini:true,empty:true});await ready(page);
+  await page.setViewportSize({width:390,height:844});const f=await fixtures(page,{logged:false,mini:true,empty:true,landing:true});await ready(page);
   await expect(page.locator('html')).toHaveAttribute('data-mini-app','true');expect(await page.evaluate(()=>window.__tgCalls)).toEqual(['ready','expand']);
   await expect(page.getByRole('heading',{name:'Ваше пространство.'})).toBeVisible();await noOverflow(page);await page.screenshot({path:'ui-results/mini-dashboard.png',fullPage:true,animations:'disabled'});await page.screenshot({path:'ui-results/mini-dashboard-viewport.png',animations:'disabled'});
   await page.locator('.bottom-nav').getByRole('link',{name:'Каталог',exact:true}).click();await page.getByRole('button',{name:/Оформить тестовую подписку/}).click();await expect(page.getByRole('dialog')).toBeVisible();await page.getByRole('button',{name:'Подтвердить',exact:true}).click();
@@ -96,7 +98,7 @@ test('mobile Mini App purchase, renewal, settings and native navigation',async({
   const writes=f.requests.filter(x=>x.path==='/orders'&&x.method==='POST');expect(writes).toHaveLength(2);expect(writes[1].body.renewalId).toBeTruthy();expect(writes.every(x=>x.headers['x-shared-vps']==='1')).toBe(true);
   await page.screenshot({path:'ui-results/mini-subscription.png',fullPage:true,animations:'disabled'});
   await page.evaluate(()=>window.__tgSettings());await page.getByRole('checkbox',{name:/Напоминания о подписке/}).check();await page.getByRole('button',{name:'Сохранить настройки'}).click();await expect(page.getByRole('status').filter({hasText:'Настройки уведомлений сохранены.'})).toBeVisible();expect(f.getPreference().remindersEnabled).toBe(true);
-  await page.evaluate(()=>window.__tgBack());await expect(page.getByRole('heading',{name:'Ваше пространство.'})).toBeVisible();expect(await page.evaluate(()=>window.__tgBackVisible)).toBe(false);await noOverflow(page);expect(f.errors).toEqual([]);expect(f.unexpected).toEqual([]);
+  await page.evaluate(()=>window.__tgBack());await expect(page.getByRole('heading',{name:'Подписка под контролем.'})).toBeVisible();expect(await page.evaluate(()=>window.__tgBackVisible)).toBe(true);await noOverflow(page);expect(f.errors).toEqual([]);expect(f.unexpected).toEqual([]);
 });
 test('mobile history, search, pagination, support and profile',async({page})=>{
   await page.setViewportSize({width:360,height:780});await page.emulateMedia({reducedMotion:'reduce'});const f=await fixtures(page);await ready(page,'/orders');await expect(page.locator('#account-records .history-card')).toHaveCount(2);await page.getByRole('button',{name:'Далее →',exact:true}).click();await expect(page.locator('#account-page')).toHaveText('Страница 2');expect(f.requests.some(x=>x.query.includes('cursor=fixture-next'))).toBe(true);
@@ -108,11 +110,11 @@ test('mobile history, search, pagination, support and profile',async({page})=>{
   await ready(page,'/profile');await page.screenshot({path:'ui-results/mobile-profile.png',fullPage:true,animations:'disabled'});await page.getByRole('button',{name:'Выйти из аккаунта'}).click();await expect(page.getByRole('dialog')).toBeVisible();await page.keyboard.press('Escape');await expect(page.getByRole('dialog')).not.toBeVisible();expect(f.requests.some(x=>x.path==='/auth/logout')).toBe(false);expect(f.errors).toEqual([]);expect(f.unexpected).toEqual([]);
 });
 test('Mini App checks an existing cookie account, handles mismatch and accepts a known replay',async({page})=>{
-  const f=await fixtures(page,{mini:true,mismatch:true});await ready(page,'/profile');await expect(page.getByRole('heading',{name:'Подключим ваш Telegram.'})).toBeVisible();await expect(page.getByText('ID аккаунта:',{exact:false})).toHaveCount(0);await page.getByRole('button',{name:'Подключить текущий аккаунт'}).click();await page.getByRole('button',{name:'Подтвердить',exact:true}).click();await expect(page.getByRole('heading',{name:'Ваше пространство.'})).toBeVisible();expect(f.requests.filter(x=>x.path==='/auth/telegram')).toHaveLength(2);expect(f.errors).toEqual([]);
-  const second=await page.context().newPage();const replay=await fixtures(second,{mini:true,replay:true});await ready(second,'/profile');await expect(second.getByRole('heading',{name:'Вы подключены.'})).toBeVisible();expect(replay.requests.some(x=>x.path==='/auth/telegram')).toBe(true);await second.close();
+  const f=await fixtures(page,{mini:true,mismatch:true,landing:true});await ready(page,'/profile');await expect(page.getByRole('heading',{name:'Подключим ваш Telegram.'})).toBeVisible();await expect(page.getByText('ID аккаунта:',{exact:false})).toHaveCount(0);await page.getByRole('button',{name:'Подключить текущий аккаунт'}).click();await page.getByRole('button',{name:'Подтвердить',exact:true}).click();await expect(page.getByRole('heading',{name:'Ваше пространство.'})).toBeVisible();expect(f.requests.filter(x=>x.path==='/auth/telegram')).toHaveLength(2);expect(f.errors).toEqual([]);
+  const second=await page.context().newPage();const replay=await fixtures(second,{mini:true,replay:true,landing:true});await ready(second,'/profile');await expect(second.getByRole('heading',{name:'Вы подключены.'})).toBeVisible();expect(replay.requests.some(x=>x.path==='/auth/telegram')).toBe(true);await second.close();
 });
 test('ADMIN pagination and diagnostics retain guarded operations on a small screen',async({page})=>{
-  await page.setViewportSize({width:390,height:844});const f=await fixtures(page,{admin:true});await ready(page,'/admin');await expect(page.getByRole('heading',{name:'Диагностика',exact:true})).toBeVisible();await expect(page.locator('#diagnostics')).toContainText('ready');await noOverflow(page);
+  await page.setViewportSize({width:390,height:844});const f=await fixtures(page,{admin:true,landing:true});await ready(page,'/admin');await expect(page.getByRole('heading',{name:'Диагностика',exact:true})).toBeVisible();await expect(page.locator('#diagnostics')).toContainText('ready');await noOverflow(page);
   await page.getByRole('button',{name:'Фоновые задачи',exact:true}).click();await expect(page.locator('#list-records')).toContainText('DELIVERY_UNKNOWN');await expect(page.locator('[data-job-retry]')).toHaveCount(0);await page.screenshot({path:'ui-results/mobile-admin.png',fullPage:true,animations:'disabled'});expect(f.errors).toEqual([]);expect(f.unexpected).toEqual([]);
 });
 test('USER cannot open the administrative UI and a slow page cannot overwrite a new route',async({page})=>{
@@ -126,5 +128,53 @@ test('Stage 1.5 instructions precede purchase and remain accessible after activa
   const f=await fixtures(page,{empty:true});await ready(page,'/catalog');await expect(page.getByText(/После оформления вы получите пошаговую инструкцию/)).toBeVisible();await page.getByRole('button',{name:/Оформить тестовую подписку/}).click();await expect(page.getByRole('dialog')).toContainText('Дождитесь статуса');await page.getByRole('button',{name:'Подтвердить',exact:true}).click();await expect(page.getByRole('heading',{name:'Подписка активна.'})).toBeVisible();await page.getByRole('link',{name:'Открыть инструкцию',exact:true}).click();for(const platform of ['Android','iOS','Windows','macOS']){await page.getByRole('button',{name:platform,exact:true}).click();await expect(page.locator('#instruction-platform-title')).toContainText(platform);}await expect(page.locator('#page')).toContainText('в сторонние приложения не нужно');await noOverflow(page);expect(f.errors).toEqual([]);expect(f.unexpected).toEqual([]);await page.screenshot({path:'ui-results/readiness-instructions.png',fullPage:true,animations:'disabled'});
 });
 test('Stage 1.5 pending activation cannot show a false success',async({page})=>{const f=await fixtures(page,{pendingCheckout:true});await ready(page,'/checkout?order=44444444-4444-4444-8444-444444444444');await expect(page.getByRole('heading',{name:'Проверим статус заказа.'})).toBeVisible();await expect(page.getByRole('heading',{name:'Подписка активна.'})).toHaveCount(0);await expect(page.getByRole('button',{name:'Обновить статус',exact:true})).toBeVisible();await expect(page.getByText(/Не создавайте повторный заказ/)).toBeVisible();expect(f.errors).toEqual([]);});
-test('Stage 1.5 support thread escapes content and sends an owned reply in the Mini App',async({page})=>{await page.setViewportSize({width:360,height:780});const f=await fixtures(page,{mini:true});await ready(page,'/support?ticket=55555555-5555-4555-8555-555555555555');await expect(page.getByRole('heading',{name:'Обращение №7'})).toBeVisible();await expect(page.locator('.thread-messages')).toContainText('<script>');expect(await page.evaluate(()=>window.fixtureXss)).toBeUndefined();await page.getByLabel('Ваш ответ', {exact:false}).fill('Спасибо, разобрался.');await page.getByRole('button',{name:'Отправить ответ',exact:true}).click();await expect.poll(()=>f.requests.filter(x=>x.path.endsWith('/messages')).length).toBe(1);expect(f.requests.some(x=>x.path.startsWith('/admin'))).toBe(false);await expect(page.locator('#toast')).not.toContainText('Этот раздел доступен только администратору');await noOverflow(page);expect(f.errors).toEqual([]);expect(f.unexpected).toEqual([]);await page.screenshot({path:'ui-results/readiness-support.png',fullPage:true,animations:'disabled'});});
+test('Stage 1.5 support thread escapes content and sends an owned reply in the Mini App',async({page})=>{await page.setViewportSize({width:360,height:780});const f=await fixtures(page,{mini:true,landing:true});await ready(page,'/support?ticket=55555555-5555-4555-8555-555555555555');await expect(page.getByRole('heading',{name:'Обращение №7'})).toBeVisible();await expect(page.locator('.thread-messages')).toContainText('<script>');expect(await page.evaluate(()=>window.fixtureXss)).toBeUndefined();await page.getByLabel('Ваш ответ', {exact:false}).fill('Спасибо, разобрался.');await page.getByRole('button',{name:'Отправить ответ',exact:true}).click();await expect.poll(()=>f.requests.filter(x=>x.path.endsWith('/messages')).length).toBe(1);expect(f.requests.some(x=>x.path.startsWith('/admin'))).toBe(false);await expect(page.locator('#toast')).not.toContainText('Этот раздел доступен только администратору');await noOverflow(page);expect(f.errors).toEqual([]);expect(f.unexpected).toEqual([]);await page.screenshot({path:'ui-results/readiness-support.png',fullPage:true,animations:'disabled'});});
 test('Stage 1.5 finance distinguishes underfill and keeps four-user approval off',async({page})=>{const f=await fixtures(page,{admin:true});await ready(page,'/admin');await expect(page.locator('#finance-result')).toContainText('Остаток после аренды');await expect(page.locator('#finance-result')).toContainText('не является чистой прибылью');await page.getByLabel('Пользователей',{exact:true}).fill('1');await page.getByRole('button',{name:'Пересчитать',exact:true}).click();await expect(page.locator('#finance-result')).toContainText('-3');expect(f.requests.some(x=>x.path==='/admin/capacity')).toBe(false);expect(f.errors).toEqual([]);expect(f.unexpected).toEqual([]);});
+
+test('Telegram-first landing is the ordinary browser interface in both themes',async({page})=>{
+ const f=await fixtures(page,{landing:true,logged:false,sdkOffline:true});await ready(page);
+ await expect(page.getByRole('heading',{name:/Всё необходимое/})).toBeVisible();
+ await expect(page.getByRole('link',{name:/Открыть AXON в Telegram/})).toHaveAttribute('href','https://t.me/vpnaxon_bot');
+ await expect(page.locator('.site-nav')).toBeHidden();await expect(page.locator('.bottom-nav')).toBeHidden();await expect(page.locator('.demo-toolbar')).toBeHidden();
+ await expect(page.locator('#page')).toContainText('Полноценная веб-версия появится позже');await noOverflow(page);
+ await page.screenshot({path:'ui-results/telegram-first-landing-dark.png',fullPage:true,animations:'disabled'});
+ await page.getByRole('button',{name:'Переключить тему'}).click();await expect(page.locator('html')).toHaveAttribute('data-theme','light');await page.screenshot({path:'ui-results/telegram-first-landing-light.png',fullPage:true,animations:'disabled'});
+ expect(f.requests.some(x=>['/orders','/subscriptions','/support'].includes(x.path))).toBe(false);expect(f.errors).toEqual([]);expect(f.unexpected).toEqual([]);
+});
+test('retained user routes and forged URL flags cannot expose the normal browser application',async({page})=>{
+ const f=await fixtures(page,{landing:true,miniVerified:false});await page.setViewportSize({width:320,height:720});
+ for(const path of ['/catalog','/subscriptions','/orders','/support','/profile','/history','/instructions','/notifications','/renew','/connect','/checkout?order=44444444-4444-4444-8444-444444444444','/profile?miniapp=1&admin=1']){
+  await ready(page,path);await expect(page.getByRole('heading',{name:/Всё необходимое/})).toBeVisible();await noOverflow(page);
+ }
+ expect(f.requests.filter(x=>x.path==='/orders'&&x.method==='POST')).toHaveLength(0);expect(f.requests.some(x=>['/subscriptions','/support'].includes(x.path))).toBe(false);
+ await page.screenshot({path:'ui-results/telegram-first-landing-mobile.png',fullPage:true,animations:'disabled'});expect(f.errors).toEqual([]);expect(f.unexpected).toEqual([]);
+});
+test('a fake SDK launch and an ordinary cookie do not grant verified Mini App access',async({page})=>{
+ const f=await fixtures(page,{landing:true,mini:true,invalidMini:true,miniVerified:false});await ready(page,'/profile');
+ await expect(page.locator('html')).toHaveAttribute('data-public-site','true');await expect(page.getByRole('heading',{name:'Вы подключены.'})).toHaveCount(0);
+ expect(f.requests.some(x=>x.path==='/auth/telegram')).toBe(true);expect(f.requests.some(x=>['/subscriptions','/orders'].includes(x.path))).toBe(false);expect(f.errors).toEqual([]);
+});
+test('browser ADMIN login remains separate from the public landing and USER gains no ADMIN',async({page})=>{
+ const admin=await fixtures(page,{landing:true,logged:false,admin:true});await ready(page,'/admin');await expect(page.getByRole('heading',{name:'Вход администратора.'})).toBeVisible();
+ await page.getByRole('button',{name:'Войти по коду',exact:true}).click();await page.getByLabel('8 цифр из бота').fill('12345678');await page.getByRole('button',{name:'Войти',exact:true}).click();await expect(page.getByRole('heading',{name:'Админ-панель',exact:true})).toBeVisible();await expect(page.getByRole('heading',{name:'Диагностика',exact:true})).toBeVisible();
+ expect(admin.requests.some(x=>x.path==='/admin')).toBe(true);expect(admin.errors).toEqual([]);expect(admin.unexpected).toEqual([]);
+ const other=await page.context().newPage();const user=await fixtures(other,{landing:true});await ready(other,'/admin');await expect(other.getByRole('heading',{name:'Доступ ограничен'})).toBeVisible();expect(user.requests.some(x=>x.path.startsWith('/admin'))).toBe(false);await other.close();
+});
+test('production-mode Mini App keeps safe areas, themes, keyboard states and contextual Back at 320-390px',async({page})=>{
+ const f=await fixtures(page,{landing:true,mini:true});await page.setViewportSize({width:390,height:844});await ready(page);
+ for(const width of [320,360,390]){await page.setViewportSize({width,height:780});await page.locator('.bottom-nav').getByRole('link',{name:'Профиль',exact:true}).click();await expect(page.getByRole('heading',{name:'Вы подключены.'})).toBeVisible();await noOverflow(page);await page.locator('.quick-links a[href="#/instructions"]').click();await expect(page.getByRole('heading',{name:'Инструкция всегда рядом.'})).toBeVisible();await page.evaluate(()=>window.__tgBack());await expect(page.getByRole('heading',{name:'Вы подключены.'})).toBeVisible();}
+ await page.evaluate(()=>{window.Telegram.WebApp.colorScheme='light';window.__tgEvents.themeChanged();});await expect(page.locator('html')).toHaveAttribute('data-theme','light');await page.screenshot({path:'ui-results/telegram-first-mini-light.png',fullPage:true,animations:'disabled'});
+ await page.locator('.bottom-nav').getByRole('link',{name:'Поддержка',exact:true}).click();await page.getByLabel('Чем можем помочь?').fill('Проверка небольшого экрана');
+ await page.evaluate(()=>{window.Telegram.WebApp.viewportHeight=430;window.__tgEvents.viewportChanged();});await expect(page.locator('html')).toHaveAttribute('data-keyboard-open','true');await expect(page.locator('.bottom-nav')).toBeHidden();await noOverflow(page);
+ await page.evaluate(()=>{window.Telegram.WebApp.viewportHeight=740;window.__tgEvents.viewportChanged();});await expect(page.locator('.bottom-nav')).toBeVisible();expect(f.errors).toEqual([]);expect(f.unexpected).toEqual([]);
+});
+test('authenticated Mini App with invalid signature never falls through to a browser user screen',async({page})=>{
+ const f=await fixtures(page,{landing:true,mini:true,invalidMini:true,logged:false});await ready(page,'/subscriptions');
+ await expect(page.getByRole('heading',{name:/Всё необходимое/})).toBeVisible();expect(f.requests.some(x=>x.path==='/subscriptions')).toBe(false);expect(f.errors).toEqual([]);
+});
+test('Bot API menu payload has a labelled visual preview, without pretending to be Telegram',async({page})=>{
+ const {inlineMainMenu}=await import('../../apps/api/src/bot-ui.ts');
+ const menu=inlineMainMenu('https://shared-vps-api.onrender.com');
+ await page.route('http://127.0.0.1:4173/bot-menu-preview',route=>route.fulfill({contentType:'text/html',body:'<!doctype html><html lang="ru"><meta charset="utf-8"><style>body{margin:0;background:#111318;color:#f4f4f2;font:16px system-ui;padding:28px;max-width:420px}small{color:#a5abb7;line-height:1.6;display:block}article{border:1px solid #ffffff20;background:#1d2026;border-radius:20px;padding:24px;margin-top:24px}h1{font-size:28px}p{line-height:1.7;color:#d3d6dd}button{display:block;width:100%;min-height:52px;border:1px solid #ffffff20;border-radius:12px;color:inherit;background:#282c35;margin-top:10px;font:600 15px system-ui}button[data-style=success]{background:#2d5a43}button[data-style=primary]{background:#254b70}</style><small>ПРЕДПРОСМОТР BOT API · НЕ НАСТОЯЩИЙ TELEGRAM</small><article><h1>AXON</h1><p>Управляйте подпиской, просматривайте инструкции и получайте поддержку прямо в Telegram.</p><small>Демонстрационная версия. Списание 0 ₽. Реальные платежи и подключения недоступны.</small></article><div id="buttons"></div><script>const menu='+JSON.stringify(menu)+';for(const row of menu.inline_keyboard){for(const item of row){const b=document.createElement("button");b.textContent=item.text;b.dataset.style=item.style||"";document.getElementById("buttons").append(b);}}</script></html>'}));
+ await page.setViewportSize({width:390,height:880});await page.goto('/bot-menu-preview');await expect(page.getByRole('button')).toHaveCount(5);await noOverflow(page);await page.screenshot({path:'ui-results/telegram-first-bot-menu-preview.png',fullPage:true,animations:'disabled'});
+});
