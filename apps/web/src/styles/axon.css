@@ -27,3 +27,28 @@ html[data-mini-app=true] body{min-height:var(--tg-height,100dvh)}
 
 /* Stage 1.5: focused additions, existing AXON layout retained. */
 .thread-messages{display:grid;gap:12px;margin:24px 0}.thread-message{border:1px solid var(--line);border-radius:16px;padding:16px;min-width:0}.thread-message p,.preserve-lines{white-space:pre-wrap;overflow-wrap:anywhere}.staff-message{background:var(--surface)}.incident-history{padding-inline-start:24px;overflow-wrap:anywhere}#readiness-admin details+details,#readiness-admin section+details{margin-top:20px}#readiness-admin input,#readiness-admin textarea,#readiness-admin select{max-width:100%;min-width:0}#support-thread form{margin-block:20px}#readiness-result{scroll-margin-bottom:120px}
+
+/* Stage 1.6: public landing is reversible; application components stay intact. */
+html[data-public-site=true] .site-nav,html[data-public-site=true] .bottom-nav{display:none!important}
+html[data-public-site=true]:not([data-admin-shell=true]) .demo-toolbar{display:none}
+html[data-public-site=true] .shell{padding-bottom:0}
+html[data-public-site=true] footer{margin-bottom:0;padding-bottom:max(24px,env(safe-area-inset-bottom))}
+.admin-entry{font-size:11px;color:var(--muted);min-height:44px;display:inline-flex;align-items:center;text-decoration:underline;text-underline-offset:4px}
+.telegram-landing{position:relative;padding:82px 0 0;isolation:isolate}
+.telegram-landing h1{font-size:clamp(42px,7.7vw,100px);font-weight:650;letter-spacing:-.065em;line-height:1.03;max-width:980px;margin:28px 0}
+.telegram-landing h1 span{color:var(--muted)}
+.telegram-landing>.lead{max-width:620px;font-size:clamp(15px,1.6vw,19px);line-height:1.7}
+.landing-notice{max-width:590px;font-size:13px;color:var(--muted);line-height:1.75;margin:22px 0 28px}
+.landing-cta{min-height:56px;gap:28px;padding:16px 23px}
+.landing-orbit{pointer-events:none;position:absolute;z-index:-1;right:3%;top:80px;width:clamp(180px,28vw,350px);aspect-ratio:1;border-radius:50%;border:1px solid var(--line);display:grid;place-items:center;background:radial-gradient(circle,#ffffff08,transparent 68%);box-shadow:inset 0 0 65px #ffffff04}
+.landing-orbit:before{content:"";position:absolute;inset:17%;border:1px solid var(--line);border-radius:50%;transform:rotateX(55deg) rotate(-30deg)}
+.landing-orbit span{font-size:clamp(90px,13vw,170px);font-weight:600;opacity:.09;letter-spacing:-.1em;transform:translateX(-6%)}
+.landing-features{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px;margin:76px 0 28px}
+.landing-features .panel{margin:0;backdrop-filter:blur(12px)}
+.landing-features h2{font-size:20px;line-height:1.3;margin:22px 0 14px}
+.landing-features p{color:var(--muted);font-size:13px;line-height:1.8}
+@media(max-width:760px){.telegram-landing{padding-top:48px}.telegram-landing h1{font-size:clamp(40px,10.5vw,68px);letter-spacing:-.055em}.landing-orbit{right:0;top:54px;width:180px}.landing-features{grid-template-columns:1fr;margin-top:48px}.landing-features .panel{padding:26px}.landing-notice{font-size:12px}.landing-cta{width:100%;justify-content:space-between;font-size:13px}.telegram-landing>.status-note{font-size:11px;line-height:1.8}html[data-public-site=true] footer{margin-bottom:0}}
+@media(prefers-reduced-transparency:reduce){.landing-features .panel{backdrop-filter:none;background:var(--solid)}}
+
+html[data-mini-app=true][data-keyboard-open=true] .bottom-nav{display:none}textarea,input,select{scroll-margin-block:24px}
+@media(max-width:350px){html[data-mini-app=true] .shell{width:calc(100% - max(14px,var(--tg-safe-left)) - max(14px,var(--tg-safe-right)));margin-left:max(14px,var(--tg-safe-left));margin-right:max(14px,var(--tg-safe-right))}}
