@@ -145,13 +145,13 @@ describe.sequential('Stage 1.2 real PostgreSQL, shared API and Telegram', () => 
     let updateId = 1;
     const message = async (text: string) => { const update = { update_id: updateId++, message: { message_id: updateId, text, from: { id: 777 }, chat: { id: 777, type: 'private' } } }; await gateway.accept(update); await gateway.accept(update); await gateway.drain(); };
     const callback = async (data: string, id = 777) => { await gateway.accept({ update_id: updateId++, callback_query: { id: String(updateId), data, from: { id }, message: { message_id: 5, chat: { id, type: 'private' } } } }); await gateway.drain(); };
-    await message('/start'); expect(JSON.stringify(sent.at(-1))).toContain('Купить подписку'); expect(sent.filter(s => s.method === 'sendMessage')).toHaveLength(1);
-    await message('🛒 Купить подписку'); const order = await db.order.findFirstOrThrow(); expect(JSON.stringify(sent.at(-1))).toContain('Подтвердить');
+    await message('/start'); expect(JSON.stringify(sent.at(-1))).toContain('Подключиться'); expect(sent.filter(s => s.method === 'sendMessage')).toHaveLength(2);
+    await message('🛒 Купить подписку');expect(await db.order.count()).toBe(0);await callback('n:plan:'+planId);expect(JSON.stringify(sent.at(-1))).toContain('Подтвердить');await callback('checkout:'+planId); const order = await db.order.findFirstOrThrow(); expect(JSON.stringify(sent.at(-1))).toContain('Подтвердите');
     await callback(`confirm:${order.id}`); await callback(`confirm:${order.id}`); expect(await db.subscription.count()).toBe(1); expect(await db.order.count()).toBe(1);
     await callback('subscription'); const s = await db.subscription.findFirstOrThrow(); expect(JSON.stringify(sent.at(-1))).toContain(s.expiresAt!.toISOString().slice(0, 10));
     await callback('connect'); expect(JSON.stringify(sent.at(-1))).toContain('Mini App'); expect(JSON.stringify(sent.at(-1))).toContain('Инструкция в Telegram');
     await callback(`confirm:${order.id}`, 888); expect(JSON.stringify(sent.at(-1))).toContain('Этот заказ недоступен'); expect(await db.subscription.count()).toBe(1); expect(await db.order.count()).toBe(1);
-    await callback('support:new'); await message('Нужна помощь с демонстрационной подпиской'); expect(await db.supportTicket.count()).toBe(1); await callback('support'); expect(JSON.stringify(sent.at(-1))).toContain('№1');
+    await callback('support:new');await callback('support:category:OTHER'); await message('Нужна помощь с демонстрационной подпиской'); expect(await db.supportTicket.count()).toBe(1); await callback('support'); expect(JSON.stringify(sent.at(-1))).toContain('№1');
     await gateway.drain(); expect(await db.subscription.count()).toBe(1);
   });
   it('webhook rejects invalid secret and accepts/stores a duplicate only once', async () => {
@@ -161,7 +161,7 @@ describe.sequential('Stage 1.2 real PostgreSQL, shared API and Telegram', () => 
   it('recovers Telegram response delivery after restart without repeating activation; website sees the same record', async () => {
     const owner = await engine.identity('900'); const order = await engine.order(owner.id, planId, 'telegram-recovery');
     const update = { update_id: 91, callback_query: { id: 'cb91', data: `confirm:${order.id}`, from: { id: 900 }, message: { message_id: 19, chat: { id: 900, type: 'private' } } } };
-    const failed = new TelegramGateway(db, config(), engine, async method => { if (method === 'editMessageText') throw new Error('transport offline'); return {}; });
+    const failed = new TelegramGateway(db, config(), engine, async method => { if (method === 'sendMessage') throw new Error('transport offline'); return {}; });
     await failed.accept(update); await failed.drain(); expect(await db.subscription.count()).toBe(1);
     expect(await db.telegramUpdate.findUniqueOrThrow({ where: { id: 91 } })).toMatchObject({ status: 'PENDING', attempts: 1 });
     expect((await db.telegramUpdate.findUniqueOrThrow({where:{id:91}})).nextAttemptAt.getTime()).toBeGreaterThan(Date.now()-100);
