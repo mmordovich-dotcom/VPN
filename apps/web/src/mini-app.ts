@@ -2,6 +2,7 @@ export interface TelegramApp {
   initData?: string;
   colorScheme?: 'light' | 'dark';
   viewportStableHeight?: number;
+  viewportHeight?:number;
   safeAreaInset?: { top: number; bottom: number; left: number; right: number };
   contentSafeAreaInset?: { top: number; bottom: number; left: number; right: number };
   ready?(): void;
@@ -23,7 +24,9 @@ const safely = (fn: () => void) => { try { fn(); } catch { /* Optional client ca
 export class MiniAppBridge {
   readonly active: boolean;
   private subscriptions: [string, () => void][] = [];
-  private back = () => this.navigate('/');
+  private routeStack=['/'];
+  private goingBack=false;
+  private back = () => {if(this.routeStack.length>1)this.routeStack.pop();this.goingBack=true;this.navigate(this.routeStack.at(-1)??'/');};
   private settings = () => this.navigate('/notifications');
   constructor(private app: TelegramApp | undefined, private root: HTMLElement, private navigate: (path: string) => void) {
     this.active = Boolean(app?.initData);
@@ -56,11 +59,14 @@ export class MiniAppBridge {
       const value = Math.max(0, app.safeAreaInset?.[edge] ?? 0) + Math.max(0, app.contentSafeAreaInset?.[edge] ?? 0);
       this.root.style.setProperty(`--tg-safe-${edge}`, `${Math.min(200, value)}px`);
     }
+    this.root.dataset.keyboardOpen=String(Boolean(app.viewportHeight&&app.viewportStableHeight&&app.viewportStableHeight-app.viewportHeight>100));
     if (Number.isFinite(app.viewportStableHeight) && app.viewportStableHeight! > 100) this.root.style.setProperty('--tg-height', `${app.viewportStableHeight}px`);
   }
   route(path: string) {
     if (!this.active) return;
-    safely(() => path === '/' ? this.app?.BackButton?.hide() : this.app?.BackButton?.show());
+    if(this.goingBack)this.goingBack=false;
+    else if(this.routeStack.at(-1)!==path){this.routeStack.push(path);if(this.routeStack.length>30)this.routeStack.splice(1,1);}
+    safely(() => path.split('?')[0] === '/' ? this.app?.BackButton?.hide() : this.app?.BackButton?.show());
   }
   feedback(kind: 'selection' | 'success' | 'error') {
     if (!this.active) return;
