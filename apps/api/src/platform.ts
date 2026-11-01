@@ -1,4 +1,4 @@
-import { RELEASE } from '@shared-vps/shared';
+import { PUBLIC_WEB_MODE, RELEASE } from '@shared-vps/shared';
 import { publicOrder, publicSubscription } from './presenters.js';
 import { readinessRoutes } from './readiness-routes.js';
 import { ticketView } from './support.js';
@@ -30,10 +30,10 @@ export async function platformRoutes(app: FastifyInstance, db: PrismaClient, con
   });
   reliabilityRoutes(app,db,auth,runtime,config);
   readinessRoutes(app,db,auth,engine);
-  app.get('/api/v1/auth/config', async () => ({ botUsername: config.TELEGRAM_BOT_USERNAME ?? null, loginEnabled: botLogin.available(), loginMode: 'bot', ...RELEASE }));
+  app.get('/api/v1/auth/config', async () => ({ botUsername: config.TELEGRAM_BOT_USERNAME ?? null, loginEnabled: botLogin.available(), loginMode: 'bot', publicWebMode:PUBLIC_WEB_MODE, ...RELEASE }));
   botLoginRoutes(app, botLogin);
   app.post<{ Body: { initData: string } }>('/api/v1/auth/telegram', { schema: { body: { type: 'object', additionalProperties: false, required: ['initData'], properties: { initData: { type: 'string', maxLength: 12000 } } } } }, async (req, reply) => auth.login(req, reply, req.body));
-  app.get('/api/v1/me', async req => { const u = await auth.user(req); return { id: u.id, role: u.role }; });
+  app.get('/api/v1/me', async req => auth.context(req));
   app.post('/api/v1/auth/logout', async (req, reply) => { await db.session.deleteMany({ where: { tokenHash: digest(auth.token(req)) } }); await botLogin.cancelBrowser(req, reply); auth.cookie(reply, '', 0); return { ok: true }; });
   app.get('/api/v1/subscriptions', async req => (await engine.subscriptions((await auth.user(req)).id)).map(publicSubscription));
   app.get('/api/v1/orders', async req => (await db.order.findMany({ where: { userId: (await auth.user(req)).id }, include: { plan: true, payments: true }, orderBy: { createdAt: 'desc' }, take: 100 })).map(publicOrder));

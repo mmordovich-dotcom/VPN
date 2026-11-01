@@ -1,4 +1,4 @@
-export const RELEASE = { stage: '1.5', version: '0.5.0', demo: true } as const;
+export const RELEASE = { stage: '1.6', version: '0.6.0', demo: true } as const;
 export const supportCategories = { SUBSCRIPTION: 'Подписка и продление', ACCOUNT: 'Вход и аккаунт', INSTRUCTIONS: 'Инструкции', UNAVAILABLE: 'Сервис недоступен', APP: 'Сайт или Mini App', OTHER: 'Другой вопрос' } as const;
 export type SupportCategory = keyof typeof supportCategories;
 export const supportStatuses = { OPEN: 'Новое', WAITING_ADMIN: 'Ожидает ответа поддержки', IN_PROGRESS: 'В работе', WAITING_PROVIDER: 'Уточняем у провайдера', WAITING_USER: 'Ожидает вашего ответа', CLOSED: 'Закрыто' } as const;
