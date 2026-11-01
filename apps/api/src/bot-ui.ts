@@ -27,7 +27,7 @@ export function contextualKeyboard(markup:object, immutable=false):object {
   return inline(rows.map(row=>row.map(button=>{
     const data=button.callback_data;
     if(data?.startsWith('n:')&&immutable)return {...button,callback_data:'o:'+data.slice(2)};
-    if(!data || /^(n:|o:|checkout:|checkout-renew:|confirm:|cancel:|support:close:|login:)/.test(data))return button;
+    if(!data || /^(n:|o:|checkout:|checkout-renew:|stop:|confirm:|cancel:|support:close:|login:)/.test(data))return button;
     return {...button,callback_data:(immutable?'o:':'n:')+data};
   })));
 }

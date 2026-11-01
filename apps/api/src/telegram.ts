@@ -182,7 +182,18 @@ export class TelegramGateway {
       else { const result = await this.engine.payment(user.id, id, text.startsWith('confirm:') ? 'confirm' : 'cancel'); const activated = result.status === 'COMPLETED' && Boolean(await this.db.subscription.count({where:{userId:user.id,status:'ACTIVE',expiresAt:{gt:new Date()},OR:[{orderId:result.id},...(order.renewalId?[{id:order.renewalId}]:[])]}})); content = `Тестовый заказ: ${botStatus(result.status)}\n${activated ? 'Подписка активирована. Откройте пошаговую инструкцию кнопкой ниже.' : 'Деньги не списывались.'}`; markup = inline([[{text:'Инструкция',callback_data:'help'},{ text: 'Моя подписка', callback_data: 'subscription' }], [{text:'Поддержка',callback_data:'support'}], [back]]); }
     } else if (text === buttons[1] || text === 'subscription') {
       content = last ? `${last.plan.name} · ${botStatus(last.status)}\nНачало: ${last.startedAt?.toISOString().slice(0, 10) ?? '—'}\nОкончание: ${last.expiresAt?.toISOString().slice(0, 10) ?? '—'}\nОсталось: ${Math.max(0, Math.ceil(((last.expiresAt?.getTime() ?? 0) - Date.now()) / 86400000))} дней\nФормат: общая демонстрационная инфраструктура, индивидуальный срок\nДемо-доступ: ${last.status === 'ACTIVE' && last.expiresAt && last.expiresAt > new Date() ? last.credentials.find(c => !c.revokedAt)?.demoIdentifier ?? '—' : 'неактивен'}\nЭто не VPN-ключ.` : 'У вас пока нет подписок.';
-      markup = inline([[{ text: 'Продлить', callback_data: 'renew' }, { text: 'Подключиться', callback_data: 'connect' }], [{ text: 'История заказов', callback_data: 'orders' }], [{ text: 'Уведомления', callback_data: 'notifications' }], [{text:'◀️ Личный кабинет',callback_data:'account'}], [back]]);
+      markup = inline([[{ text: 'Продлить', callback_data: 'renew' }, { text: 'Подключиться', callback_data: 'connect' }], [{ text: 'История заказов', callback_data: 'orders' }], [{ text: 'Уведомления', callback_data: 'notifications' }], ...(last?.status==='ACTIVE'?[[{text:'Отменить подписку',callback_data:'stop-ask:'+last.id}]]:[]), [{text:'◀️ Личный кабинет',callback_data:'account'}], [back]]);
+    } else if (text.startsWith('stop-ask:') || text.startsWith('stop:')) {
+      const id=text.slice(text.indexOf(':')+1);if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id))fail(400,'INVALID_BUTTON');
+      const sub=await this.db.subscription.findFirst({where:{id,userId:user.id},include:{plan:true}});if(!sub)fail(404,'SUBSCRIPTION_NOT_FOUND');
+      if(text.startsWith('stop-ask:')){
+        content='Отменить подписку '+sub.plan.name+'?\n\nДемо-доступ прекратится, срок и история останутся в аккаунте. Это отдельное действие, которое не выполняется при просмотре меню.';
+        markup=inline([...(sub.status==='ACTIVE'?[[{text:'Подтвердить отмену',callback_data:'stop:'+sub.id,style:'danger' as const}]]:[]),[{text:'Не отменять · к подписке',callback_data:'subscription'}],[back]]);
+      }else{
+        if(!cb)fail(400,'INVALID_BUTTON');const cancelled=await this.engine.cancel(user.id,id);immutable=true;
+        content='Подписка больше не активна.\nСтатус: '+botStatus(cancelled.status)+'\n\nДемонстрационный доступ отключён. История заказов и переписка сохранены. Реальных списаний и возвратов нет.';
+        markup=inline([[{text:'Моя подписка',callback_data:'subscription'}],[{text:'История заказов',callback_data:'orders'}],[{text:'Поддержка',callback_data:'support'}],[back]]);
+      }
     } else if (text === buttons[2] || text === 'connect') {
       content = 'Подключение в демо\n1. Проверьте активную подписку.\n2. Откройте её демонстрационный идентификатор.\n3. Настройка реального устройства не требуется: действующих VPN-ключей здесь нет.\nВыберите удобный способ:';
       markup = inline([[{ text: 'Инструкция в Telegram', callback_data: 'help' }], ...(miniAppButton(this.config.PUBLIC_ORIGIN, '/connect') ? [[miniAppButton(this.config.PUBLIC_ORIGIN, '/connect')!]] : []), [back]]);
