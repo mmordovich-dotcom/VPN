@@ -1,5 +1,5 @@
 export const appLabel = 'Открыть приложение';
-export type BotButton = { text: string; callback_data?: string; web_app?: {url:string}; url?:string; style?:'primary'|'success'|'danger' };
+export type BotButton = { text: string; callback_data?: string; web_app?: {url:string}; url?:string; style?:'primary'|'success'|'danger'; icon_custom_emoji_id?:string };
 export const inline = (items: BotButton[][]) => ({inline_keyboard:items});
 export function miniAppButton(origin: string | undefined, path = '/') {
   if (!origin) return null;
@@ -17,7 +17,7 @@ export function inlineMainMenu(origin:string|undefined) {
     [{text:'👤 Личный кабинет',callback_data:'n:account'}],
     [{text:'📖 Инструкции',callback_data:'n:help'}],
     [{text:'💬 Поддержка',callback_data:'n:support'}],
-    ...(app?[[{...app,text:'📱 Открыть приложение'}]]:[[{text:'📱 Открыть приложение',callback_data:'n:app'}]]),
+    ...(app?[[{...app,text:'✦ Открыть приложение'}]]:[[{text:'✦ Открыть приложение',callback_data:'n:app'}]]),
   ]);
 }
 /** Only new navigation messages use n:. Receipts and old messages open a NEW menu with o:. */

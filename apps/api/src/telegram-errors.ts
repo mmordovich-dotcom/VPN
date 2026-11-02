@@ -1,6 +1,6 @@
 import { JobFailure } from './job-queue.js';
 export class TelegramFailure extends JobFailure {
-  constructor(code: 'TELEGRAM_RETRY' | 'TELEGRAM_BLOCKED' | 'TELEGRAM_PERMANENT' | 'TELEGRAM_DELIVERY_UNKNOWN' | 'TELEGRAM_EDIT_UNAVAILABLE', retryAfterMs = 0) {
+  constructor(code: 'TELEGRAM_RETRY' | 'TELEGRAM_BLOCKED' | 'TELEGRAM_PERMANENT' | 'TELEGRAM_DELIVERY_UNKNOWN' | 'TELEGRAM_EDIT_UNAVAILABLE' | 'TELEGRAM_MEDIA_UNAVAILABLE', retryAfterMs = 0) {
     super(code, code === 'TELEGRAM_BLOCKED' || code === 'TELEGRAM_PERMANENT', retryAfterMs, code === 'TELEGRAM_DELIVERY_UNKNOWN');
   }
 }
