@@ -1,3 +1,4 @@
+import {textOnlyBotVisuals} from '../../../apps/api/src/bot-visual-config.js';
 import { randomUUID, createHmac, randomBytes, generateKeyPairSync, sign } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -141,7 +142,7 @@ describe.sequential('Stage 1.2 real PostgreSQL, shared API and Telegram', () => 
   });
   it('button bot start/buy/confirm/my-sub/connect/support share PostgreSQL and deduplicate updates', async () => {
     const sent: { method: string; body: Record<string, unknown> }[] = [];
-    const gateway = new TelegramGateway(db, config(), engine, async (method, body) => { sent.push({ method, body }); return {}; });
+    const gateway = new TelegramGateway(db, config(), engine, async (method, body) => { sent.push({ method, body }); return {}; },textOnlyBotVisuals);
     let updateId = 1;
     const message = async (text: string) => { const update = { update_id: updateId++, message: { message_id: updateId, text, from: { id: 777 }, chat: { id: 777, type: 'private' } } }; await gateway.accept(update); await gateway.accept(update); await gateway.drain(); };
     const callback = async (data: string, id = 777) => { await gateway.accept({ update_id: updateId++, callback_query: { id: String(updateId), data, from: { id }, message: { message_id: 5, chat: { id, type: 'private' } } } }); await gateway.drain(); };
@@ -161,13 +162,13 @@ describe.sequential('Stage 1.2 real PostgreSQL, shared API and Telegram', () => 
   it('recovers Telegram response delivery after restart without repeating activation; website sees the same record', async () => {
     const owner = await engine.identity('900'); const order = await engine.order(owner.id, planId, 'telegram-recovery');
     const update = { update_id: 91, callback_query: { id: 'cb91', data: `confirm:${order.id}`, from: { id: 900 }, message: { message_id: 19, chat: { id: 900, type: 'private' } } } };
-    const failed = new TelegramGateway(db, config(), engine, async method => { if (method === 'sendMessage') throw new Error('transport offline'); return {}; });
+    const failed = new TelegramGateway(db, config(), engine, async method => { if (method === 'sendMessage') throw new Error('transport offline'); return {}; },textOnlyBotVisuals);
     await failed.accept(update); await failed.drain(); expect(await db.subscription.count()).toBe(1);
     expect(await db.telegramUpdate.findUniqueOrThrow({ where: { id: 91 } })).toMatchObject({ status: 'PENDING', attempts: 1 });
     expect((await db.telegramUpdate.findUniqueOrThrow({where:{id:91}})).nextAttemptAt.getTime()).toBeGreaterThan(Date.now()-100);
     // Deterministically advance the persisted retry deadline instead of sleeping in CI.
     await db.telegramUpdate.update({where:{id:91},data:{nextAttemptAt:new Date(0)}});
-    const replies: unknown[] = []; const restarted = new TelegramGateway(db, config(), new SubscriptionEngine(db), async (_method, body) => { replies.push(body); return {}; });
+    const replies: unknown[] = []; const restarted = new TelegramGateway(db, config(), new SubscriptionEngine(db), async (_method, body) => { replies.push(body); return {}; },textOnlyBotVisuals);
     await restarted.accept(update); await restarted.drain(); await restarted.drain(); expect(await db.subscription.count()).toBe(1); expect(await db.server.count()).toBe(1);
     expect(await db.telegramUpdate.findUniqueOrThrow({ where: { id: 91 } })).toMatchObject({ status: 'DONE', attempts: 2 });
     const app = await buildApp(config()); try { const response = await app.inject({ url: '/api/v1/subscriptions', headers: headers(await cookie(owner.id)) }); expect(response.json()).toEqual([expect.objectContaining({ userId: owner.id, orderId: order.id })]); } finally { await app.close(); }

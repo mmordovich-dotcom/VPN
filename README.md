@@ -22,3 +22,5 @@ Node 22.22.2 / pnpm 10.34.4. GitHub Actions выполняет build, typecheck,
 Render shared-vps-api и Neon patient-queen-83814443 остаются существующими. Runtime DATABASE_URL — pooled; migration secret NEON_MIGRATION_DATABASE_URL — direct. Stage 1.6 не добавляет миграций или env. Секреты не публикуются. Capacity 3, gate 4 выключен; цены и production-данные не меняются.
 
 Render Free может засыпать; inline tasks и доставка работают при запущенном API. Always-on SLA, настоящие платежи/VPS/VPN, новые платные ресурсы и коммерческий запуск не входят в этот этап. Реальная приёмка новой версии в Telegram и на устройствах выполняется после отдельно разрешённой публикации.
+
+Дополнение Stage 1.6: [заменяемые баннеры и Premium-эмодзи бота](docs/stage-1.6-bot-visual.md) — отдельный PR, до согласованного выпуска не production.

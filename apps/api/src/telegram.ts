@@ -1,3 +1,5 @@
+import {BotPresentation,sectionForAction,presentationDigest,plainPresentationBody,hasOptionalFormatting,hasCustomEmoji,type BotReply} from './bot-presentation.js';
+import {botVisualConfig,type BotVisualConfig} from './bot-visual-config.js';
 import { instructionText, instructionPlatforms, purchaseGuidance, purchaseSteps, supportCategories, supportStatuses, type SupportCategory } from '@shared-vps/shared';
 import { SupportService } from './support.js';
 import { appLabel, miniAppButton, inlineMainMenu, contextualKeyboard, withoutButtonStyles, supportChunks, inline, botStatus, botError } from './bot-ui.js';
@@ -10,8 +12,8 @@ import { equal } from './auth.js';
 import { DomainError, fail, SubscriptionEngine } from './engine.js';
 import { BotLogin } from './bot-login.js';
 import { loginAction, type LoginAction } from './bot-login-updates.js';
-type Update = { update_id: number; loginAction?: LoginAction; message?: { message_id: number; text?: string; from?: { id: number; is_bot?: boolean }; chat: { id: number; type: string } }; callback_query?: { id: string; data?: string; from: { id: number; is_bot?: boolean }; message?: { message_id: number; chat: { id: number; type: string } } } };
-type Reply = { method: string; body: Record<string, unknown>; removeKeyboard?: boolean };
+type Update = { update_id: number; loginAction?: LoginAction; message?: { message_id: number; text?: string; from?: { id: number; is_bot?: boolean }; chat: { id: number; type: string } }; callback_query?: { id: string; data?: string; from: { id: number; is_bot?: boolean }; message?: { message_id: number; chat: { id: number; type: string }; photo?:{file_id:string}[];caption?:string;caption_entities?:unknown[];photoFileId?:string;captionDigest?:string;captionEntitiesDigest?:string } } };
+type Reply = BotReply;
 const buttons = ['🛒 Купить подписку', '👤 Моя подписка', '🔌 Подключиться', '🔄 Продлить подписку', '📖 Инструкции', '💬 Поддержка'];
 // Compatibility export: never install a persistent Reply Keyboard again.
 export const mainKeyboard = { remove_keyboard: true };
@@ -19,22 +21,46 @@ const back = { text: '← Назад', callback_data: 'menu' };
 export class TelegramGateway {
   private login: BotLogin;
   private support: SupportService;
-  constructor(private db: PrismaClient, private config: ApiConfig, private engine: SubscriptionEngine, private transport?: (method: string, body: Record<string, unknown>) => Promise<unknown>) { this.login = new BotLogin(db, config, engine); this.support = new SupportService(db); }
+  private presentation:BotPresentation;
+  constructor(private db: PrismaClient, private config: ApiConfig, private engine: SubscriptionEngine, private transport?: (method: string, body: Record<string, unknown>) => Promise<unknown>, visualPolicy:BotVisualConfig=botVisualConfig) { this.login = new BotLogin(db, config, engine); this.support = new SupportService(db);this.presentation=new BotPresentation(config.PUBLIC_ORIGIN,(m,b)=>this.call(m,b),visualPolicy); }
   authentic(secret: string) { return Boolean(this.config.TELEGRAM_BOT_TOKEN && this.config.TELEGRAM_WEBHOOK_SECRET && equal(secret, this.config.TELEGRAM_WEBHOOK_SECRET)); }
-  async call(method: string, body: Record<string, unknown>): Promise<unknown> {
+  async call(method: string, body: Record<string, unknown>, beforeAttempt?:()=>Promise<void>): Promise<unknown> {
+    if(beforeAttempt)await beforeAttempt();
     if (this.transport) return this.transport(method, body);
     if (!this.config.TELEGRAM_BOT_TOKEN) return fail(503, 'BOT_NOT_CONFIGURED');
     let result: Response;
-    try { result = await fetch(`https://api.telegram.org/bot${this.config.TELEGRAM_BOT_TOKEN}/${method}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(method === 'answerCallbackQuery' ? 1500 : 8000) }); } catch { throw new TelegramFailure(method === 'sendMessage' || method === 'editMessageText' ? 'TELEGRAM_DELIVERY_UNKNOWN' : 'TELEGRAM_RETRY'); }
+    try { result = await fetch(`https://api.telegram.org/bot${this.config.TELEGRAM_BOT_TOKEN}/${method}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(method === 'answerCallbackQuery' ? 1500 : 8000) }); } catch { throw new TelegramFailure(['sendMessage','editMessageText','sendPhoto','editMessageMedia','editMessageCaption','editMessageReplyMarkup'].includes(method) ? 'TELEGRAM_DELIVERY_UNKNOWN' : 'TELEGRAM_RETRY'); }
     let data: { ok: boolean; result?: unknown; description?: string; error_code?: number; parameters?: { retry_after?: number } };
     try { data = await result.json() as typeof data; } catch { throw new TelegramFailure('TELEGRAM_DELIVERY_UNKNOWN'); }
     if (!result.ok || !data.ok) {
-      if (method === 'editMessageText' && data.description?.includes('message is not modified')) return {};
-      if (data.error_code === 400 && /style/i.test(data.description ?? '') && JSON.stringify(body.reply_markup ?? {}).includes('"style":')) return this.call(method, withoutButtonStyles(body));
-      if (method === 'editMessageText' && data.error_code === 400 && /message to edit not found|message can.t be edited|message_id_invalid/i.test(data.description ?? '')) throw new TelegramFailure('TELEGRAM_EDIT_UNAVAILABLE');
+      if (method.startsWith('editMessage') && data.description?.includes('message is not modified')) return {};
+      if(data.error_code===400&&/custom.?emoji|emoji.?id|icon_custom|button_icon|icon.*(?:invalid|unsupported)|parse.*entit|entit.*(?:invalid|bound|offset)|unsupported.*parse_mode/i.test(data.description??'')&&hasOptionalFormatting(body)){if(hasCustomEmoji(body))this.presentation.disableEmoji();return this.call(method,plainPresentationBody(body),beforeAttempt);}
+      if (data.error_code === 400 && /style/i.test(data.description ?? '') && JSON.stringify(body.reply_markup ?? {}).includes('"style":')) return this.call(method, withoutButtonStyles(body),beforeAttempt);
+      if (method.startsWith('editMessage') && data.error_code === 400 && /message to edit not found|message can.t be edited|message_id_invalid|no (?:text|caption) in (?:the )?message/i.test(data.description ?? '')) throw new TelegramFailure('TELEGRAM_EDIT_UNAVAILABLE');
+      if(['sendPhoto','editMessageMedia'].includes(method)&&data.error_code===400&&/wrong file identifier|file_id|failed to get HTTP URL content|wrong type of the web page content|photo.*(?:invalid|too|empty)|image_process_failed|media_empty|file must be non-empty|url.*(?:invalid|content)|file reference.*expired/i.test(data.description??''))throw new TelegramFailure('TELEGRAM_MEDIA_UNAVAILABLE');
       throw telegramFailure(data.error_code ?? result.status, data.parameters?.retry_after);
     }
     return data.result;
+  }
+  /** Cosmetic recovery follows only a confirmed rejection. Unknown delivery is never sent again. */
+  async deliver(reply:Reply,beforeAttempt?:()=>Promise<void>){
+    let current=reply;let missing=false;
+    const send=async(plan:Reply)=>{const result=await this.call(plan.method,plan.body,beforeAttempt);this.presentation.remember(plan,result);return result;};
+    try{return await send(current);}catch(error){
+      if(!(error instanceof TelegramFailure))throw error;
+      if(error.code==='TELEGRAM_MEDIA_UNAVAILABLE'){
+        const uncached=this.presentation.uncached(current);
+        if(uncached&&current.asset){this.presentation.forget(current.asset);current=uncached;try{return await send(current);}catch(e){if(!(e instanceof TelegramFailure))throw e;error=e;}}
+      }
+      if(error instanceof TelegramFailure&&error.code==='TELEGRAM_EDIT_UNAVAILABLE'&&current.method.startsWith('editMessage')){
+        missing=true;current=this.presentation.fresh(current);try{return await send(current);}catch(e){if(!(e instanceof TelegramFailure))throw e;error=e;}
+      }
+      if(error instanceof TelegramFailure&&error.code==='TELEGRAM_MEDIA_UNAVAILABLE'&&reply.fallback){
+        const {message_id:_id,...fresh}=reply.fallback.body;
+        return this.call(missing?'sendMessage':reply.fallback.method,missing?fresh:reply.fallback.body,beforeAttempt);
+      }
+      throw error;
+    }
   }
   async register() {
     const origin = this.config.PUBLIC_ORIGIN;
@@ -55,6 +81,7 @@ export class TelegramGateway {
     await this.register();
     const app = miniAppButton(this.config.PUBLIC_ORIGIN);
     if (app) await this.call('setChatMenuButton', { menu_button: { type: 'web_app', text: 'AXON', web_app: app.web_app } });
+    await this.presentation.loadEmoji();
   }
   async accept(raw: unknown) {
     if (!raw || typeof raw !== 'object' || !Number.isInteger((raw as Update).update_id) || (raw as Update).update_id < 0) fail(400, 'INVALID_UPDATE');
@@ -70,7 +97,7 @@ export class TelegramGateway {
         ...(update.message.from ? { from: sender(update.message.from) } : {}),
         ...(typeof update.message.text === 'string' ? { text: action?.type === 'CLAIM' ? '/login-request' : update.message.text } : {}) } } : {}),
       ...(update.callback_query ? { callback_query: { id: update.callback_query.id, ...(typeof update.callback_query.data === 'string' ? { data: update.callback_query.data } : {}), from: sender(update.callback_query.from),
-        ...(update.callback_query.message ? { message: { message_id: update.callback_query.message.message_id, chat: chat(update.callback_query.message.chat) } } : {}) } } : {}) };
+        ...(update.callback_query.message ? { message: { message_id: update.callback_query.message.message_id, chat: chat(update.callback_query.message.chat),...(Array.isArray(update.callback_query.message.photo)&&typeof update.callback_query.message.photo.at(-1)?.file_id==='string'&&update.callback_query.message.photo.at(-1)!.file_id.length<=512?{photoFileId:update.callback_query.message.photo.at(-1)!.file_id,...(typeof update.callback_query.message.caption==='string'?{captionDigest:presentationDigest(update.callback_query.message.caption)}:{}),captionEntitiesDigest:presentationDigest(update.callback_query.message.caption_entities??[])}:{}) } } : {}) } } : {}) };
     await this.db.telegramUpdate.upsert({ where: { id: update.update_id }, update: { id:update.update_id }, create: { id: update.update_id, payload: JSON.parse(JSON.stringify(safe)) as Prisma.InputJsonObject } });
     // Acknowledge before queue/business work; a failed/expired ACK never repeats the action.
     if (safe.callback_query) try { await this.call('answerCallbackQuery', { callback_query_id: safe.callback_query.id, ...(!safe.callback_query.message ? {text:'Сообщение устарело. Откройте /start в личном чате.'} : {}) }); } catch { /* drain retries the acknowledgement as a recovery fallback */ }
@@ -253,7 +280,8 @@ export class TelegramGateway {
     }
     if (text.startsWith('/start') || text === 'menu') await this.db.botState.upsert({ where: { userId: user.id }, update: { awaitingSupport: false, activeTicketId: null }, create: { userId: user.id } });
     const edit=Boolean(cb&&navigation&&!immutable);
-    return { method:edit?'editMessageText':'sendMessage', ...(!cb && (text.startsWith('/start') || buttons.includes(text) || text===appLabel) ? {removeKeyboard:true}:{}), body:{chat_id:sender.id,...(edit?{message_id:msg.message_id}:{}),text:content,reply_markup:contextualKeyboard(markup,immutable),link_preview_options:{is_disabled:true}} };
+    const section=!immutable?sectionForAction(rawText):undefined;
+    return { ...(section?{section}:{}),method:edit?'editMessageText':'sendMessage', ...(!cb && (text.startsWith('/start') || buttons.includes(text) || text===appLabel) ? {removeKeyboard:true}:{}), body:{chat_id:sender.id,...(edit?{message_id:msg.message_id}:{}),text:content,reply_markup:contextualKeyboard(markup,immutable),link_preview_options:{is_disabled:true}} };
   }
   async drain(signal?: AbortSignal) {
     if (!this.config.TELEGRAM_BOT_TOKEN && !this.transport) return;
@@ -285,6 +313,7 @@ export class TelegramGateway {
             const cb = raw.callback_query; const msg = cb?.message ?? raw.message;
             if (msg) response = { method: cb && raw.callback_query?.data?.startsWith('n:') ? 'editMessageText' : 'sendMessage', body: { chat_id: msg.chat.id, ...(cb && raw.callback_query?.data?.startsWith('n:') ? { message_id: msg.message_id, reply_markup: contextualKeyboard(inline([[back]])) } : { reply_markup: contextualKeyboard(inline([[back]]),true) }), text: botError(error.code) } };
           }
+          if(response)response=await this.presentation.prepare(response,raw.callback_query?.message??{});
           if (response && !raw.loginAction && !loginAction(raw.callback_query?.data ?? raw.message?.text ?? '')) {
             const now = await databaseNow(this.db);
             const saved = await this.db.telegramUpdate.updateMany({ where: { ...owner, leaseUntil: { gt: now } }, data: { response: JSON.parse(JSON.stringify(response)) as Prisma.InputJsonObject } });
@@ -301,16 +330,17 @@ export class TelegramGateway {
             // Acknowledge the compatibility notice durably BEFORE delivering the inline menu.
             await this.call('sendMessage',{chat_id:response.body.chat_id,text:'Теперь все действия — в кнопках под сообщением. Старую клавиатуру скрыли.',reply_markup:mainKeyboard});
             deliverySucceeded=true;
-            const continuation:Reply={method:response.method,body:response.body};
+            const {removeKeyboard:_removed,...continuation}=response;
             const checkpoint=await this.db.telegramUpdate.updateMany({where:{...owner,leaseUntil:{gt:await databaseNow(this.db)}},data:{response:JSON.parse(JSON.stringify(continuation)) as Prisma.InputJsonObject,sendStartedAt:null}});
             if(!checkpoint.count)continue;
             response=continuation;deliverySucceeded=false;
             const claimed=await this.db.telegramUpdate.updateMany({where:{...owner,leaseUntil:{gt:await databaseNow(this.db)}},data:{sendStartedAt:await databaseNow(this.db)}});if(!claimed.count)continue;
           }
-          try {await this.call(response.method,response.body);} catch(error){
-            if(response.method!=='editMessageText'||!(error instanceof TelegramFailure)||error.code!=='TELEGRAM_EDIT_UNAVAILABLE')throw error;
-            const {message_id:_missing,...fresh}=response.body;await this.call('sendMessage',fresh);
-          }
+          await this.deliver(response,async()=>{
+            const now=await databaseNow(this.db);
+            const held=await this.db.telegramUpdate.updateMany({where:{...owner,leaseUntil:{gt:now}},data:{leaseUntil:new Date(now.getTime()+30000)}});
+            if(!held.count)throw new TelegramFailure('TELEGRAM_DELIVERY_UNKNOWN');
+          });
           deliverySucceeded=true;
         }
         const now = await databaseNow(this.db);

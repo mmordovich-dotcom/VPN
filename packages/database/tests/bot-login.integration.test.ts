@@ -1,3 +1,4 @@
+import {textOnlyBotVisuals} from '../../../apps/api/src/bot-visual-config.js';
 import { randomUUID, createHmac } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -49,7 +50,7 @@ describe.sequential('Stage 1.2.5 API + bot + PostgreSQL security', () => {
   beforeEach(async () => {
     await db.$executeRawUnsafe(`TRUNCATE "${schema}".users, "${schema}".plans, "${schema}".settings, "${schema}".servers, "${schema}".telegram_updates, "${schema}".auth_limits RESTART IDENTITY CASCADE`);
     await seedDatabase(db); updateId = 0; sent = [];
-    gateway = new TelegramGateway(db, config, engine, async (method, body) => { sent.push({ method, body }); return {}; });
+    gateway = new TelegramGateway(db, config, engine, async (method, body) => { sent.push({ method, body }); return {}; },textOnlyBotVisuals);
     app = await buildApp(config, db);
   });
   afterAll(async () => { if (db) await db.$disconnect(); if (admin) { await admin.$executeRawUnsafe(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`); await admin.$disconnect(); } });

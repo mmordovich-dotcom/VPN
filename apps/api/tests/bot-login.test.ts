@@ -1,3 +1,4 @@
+import {textOnlyBotVisuals} from '../src/bot-visual-config.js';
 import { describe, expect, it } from 'vitest';
 import { loginAction } from '../src/bot-login-updates.js';
 import { digest, equal } from '../src/auth.js';
@@ -32,7 +33,7 @@ describe('existing-bot webhook bootstrap', () => {
   it('does not persist credentials echoed by Telegram in callback messages', async () => {
     let stored: unknown;
     const storage = { telegramUpdate: { upsert: async (value: unknown) => { stored = value; } } } as unknown as PrismaClient;
-    const gateway = new TelegramGateway(storage, config, new SubscriptionEngine(storage));
+    const gateway = new TelegramGateway(storage, config, new SubscriptionEngine(storage),undefined,textOnlyBotVisuals);
     const secret = 'echoed-login-secret-canary';
     await gateway.accept({ update_id: 1, loginAction: { type: 'CLAIM', tokenHash: secret }, callback_query: {
       id: 'callback-1', data: 'login:code', from: { id: 1001, first_name: secret },
@@ -44,15 +45,15 @@ describe('existing-bot webhook bootstrap', () => {
   });
   it('does not replace an unrelated webhook or a mismatched bot', async () => {
     const calls: string[] = [];
-    const gateway = new TelegramGateway(db, config, new SubscriptionEngine(db), async method => { calls.push(method); return method === 'getMe' ? { username: 'vpnaxon_bot' } : { url: 'https://another.example/webhook' }; });
+    const gateway = new TelegramGateway(db, config, new SubscriptionEngine(db), async method => { calls.push(method); return method === 'getMe' ? { username: 'vpnaxon_bot' } : { url: 'https://another.example/webhook' }; },textOnlyBotVisuals);
     await expect(gateway.bootstrap()).rejects.toMatchObject({ code: 'WEBHOOK_IN_USE' });
     expect(calls).not.toContain('setWebhook');
-    const wrong = new TelegramGateway(db, config, new SubscriptionEngine(db), async () => ({ username: 'other_bot' }));
+    const wrong = new TelegramGateway(db, config, new SubscriptionEngine(db), async () => ({ username: 'other_bot' }),textOnlyBotVisuals);
     await expect(wrong.bootstrap()).rejects.toMatchObject({ code: 'BOT_USERNAME_MISMATCH' });
   });
   it('registers the existing bot without discarding pending updates', async () => {
     const calls: { method: string; body: Record<string, unknown> }[] = [];
-    const gateway = new TelegramGateway(db, config, new SubscriptionEngine(db), async (method, body) => { calls.push({ method, body }); return method === 'getMe' ? { username: 'vpnaxon_bot' } : { url: '' }; });
+    const gateway = new TelegramGateway(db, config, new SubscriptionEngine(db), async (method, body) => { calls.push({ method, body }); return method === 'getMe' ? { username: 'vpnaxon_bot' } : { url: '' }; },textOnlyBotVisuals);
     await gateway.bootstrap();
     expect(calls.find(call => call.method === 'setWebhook')).toMatchObject({ method: 'setWebhook', body: { url: 'https://platform.example/api/v1/telegram/webhook', drop_pending_updates: false } });
   });

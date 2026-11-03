@@ -4,7 +4,7 @@ import { resolve, sep, extname } from 'node:path';
 import type { FastifyInstance } from 'fastify';
 export async function staticRoutes(app: FastifyInstance) {
   const root = fileURLToPath(new URL('../../web/dist/', import.meta.url));
-  const types: Record<string, string> = { '.html': 'text/html; charset=utf-8', '.js': 'application/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml' };
+  const types: Record<string, string> = { '.html': 'text/html; charset=utf-8', '.js': 'application/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png':'image/png', '.jpg':'image/jpeg', '.jpeg':'image/jpeg' };
   const serve = async (path: string) => {
     const absolute = resolve(root, path);
     if (!absolute.startsWith(root.endsWith(sep) ? root : root + sep) || !types[extname(path)] || path.includes('..')) return null;
