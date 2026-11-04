@@ -51,7 +51,7 @@ export class MiniAppBridge {
     const app = this.app;
     const theme = app.colorScheme === 'light' ? 'light' : 'dark';
     this.root.dataset.theme = theme;
-    const color = theme === 'dark' ? '#101113' : '#f4f4f2';
+    const color = theme === 'dark' ? '#050914' : '#edf3ff';
     safely(() => app.setHeaderColor?.(color));
     safely(() => app.setBackgroundColor?.(color));
     safely(() => app.setBottomBarColor?.(color));
