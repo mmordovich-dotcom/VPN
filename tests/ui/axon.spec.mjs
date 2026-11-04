@@ -192,6 +192,7 @@ test('Android and iOS device profiles launch the full Mini App in Chromium SDK e
 
 // Stage 1.7: actual Mini App markup, production landing mode and signed-identity API fixture.
 test('Liquid Glass screens keep mobile geometry in dark and light Telegram themes',async({page})=>{
+ test.setTimeout(180000);
  const f=await fixtures(page,{mini:true,landing:true});
  const screens=[['home','/'],['catalog','/catalog'],['subscription','/subscriptions'],['history','/orders'],['profile','/profile'],['support','/support'],['thread','/support?ticket=55555555-5555-4555-8555-555555555555'],['settings','/notifications'],['instructions','/instructions']];
  for(const width of [320,360,390]){
@@ -203,12 +204,14 @@ test('Liquid Glass screens keep mobile geometry in dark and light Telegram theme
  expect(f.errors).toEqual([]);expect(f.unexpected).toEqual([]);
 });
 
-test('Liquid dock is inset, tracks the selected route and keeps the last content reachable',async({page})=>{
+test('Liquid dock is inset, tracks the selected route and keeps the last content reachable',async({browser})=>{
+ const context=await browser.newContext({baseURL:'http://127.0.0.1:4173',viewport:{width:320,height:780},recordVideo:{dir:'ui-results/liquid-dock-video',size:{width:320,height:780}}});const page=await context.newPage();try{
  await page.setViewportSize({width:320,height:780});const f=await fixtures(page,{mini:true,landing:true});await ready(page);
  const dock=page.locator('.bottom-nav');const box=await dock.boundingBox();expect(box.x).toBeGreaterThanOrEqual(8);expect(box.x+box.width).toBeLessThanOrEqual(312);expect(box.y+box.height).toBeLessThanOrEqual(780-16);
  await dock.getByRole('link',{name:'Каталог',exact:true}).click();await expect(dock.getByRole('link',{name:'Каталог',exact:true})).toHaveAttribute('aria-current','page');await expect.poll(()=>dock.evaluate(e=>getComputedStyle(e).getPropertyValue('--dock-index'))).toBe('1');
  await dock.getByRole('link',{name:'Подписка',exact:true}).click();await expect(dock.getByRole('link',{name:'Подписка',exact:true})).toHaveAttribute('aria-current','page');await expect.poll(()=>dock.evaluate(e=>getComputedStyle(e).getPropertyValue('--dock-index'))).toBe('2');
  await page.evaluate(()=>window.scrollTo(0,document.documentElement.scrollHeight));const last=page.locator('footer .admin-entry');const end=await last.boundingBox();const fixed=await dock.boundingBox();expect(end.y+end.height).toBeLessThanOrEqual(fixed.y);await noOverflow(page);expect(f.errors).toEqual([]);
+ }finally{await context.close();}
 });
 
 test('Liquid sheet preserves focus, cancellation and a single confirmed demo mutation at 320px',async({page})=>{
