@@ -189,3 +189,45 @@ test('Android and iOS device profiles launch the full Mini App in Chromium SDK e
   try{const page=await context.newPage();const f=await fixtures(page,{mini:true,landing:true});await ready(page,'/subscriptions');await expect(page.getByRole('heading',{name:'Подписка под контролем.'})).toBeVisible();await expect(page.locator('html')).toHaveAttribute('data-public-site','false');await page.locator('.bottom-nav').getByRole('link',{name:'Профиль',exact:true}).click();await expect(page.getByRole('heading',{name:'Вы подключены.'})).toBeVisible();await page.locator('.quick-links a[href="#/support"]').click();await expect(page.getByLabel('Чем можем помочь?')).toBeVisible();await noOverflow(page);await page.screenshot({path:'ui-results/telegram-first-'+device.name+'-emulation.png',fullPage:true,animations:'disabled'});expect(f.requests.some(x=>x.path==='/auth/telegram')).toBe(true);expect(f.errors).toEqual([]);expect(f.unexpected).toEqual([]);}finally{await context.close();}
  }
 });
+
+// Stage 1.7: actual Mini App markup, production landing mode and signed-identity API fixture.
+test('Liquid Glass screens keep mobile geometry in dark and light Telegram themes',async({page})=>{
+ const f=await fixtures(page,{mini:true,landing:true});
+ const screens=[['home','/'],['catalog','/catalog'],['subscription','/subscriptions'],['history','/orders'],['profile','/profile'],['support','/support'],['thread','/support?ticket=55555555-5555-4555-8555-555555555555'],['settings','/notifications'],['instructions','/instructions']];
+ for(const width of [320,360,390]){
+  await page.setViewportSize({width,height:844});
+  for(const [name,path] of screens){await ready(page,path);await noOverflow(page);await expect(page.locator('.bottom-nav')).toBeVisible();await expect(page.locator('html')).toHaveAttribute('data-public-site','false');await page.screenshot({path:'ui-results/liquid-'+width+'-'+name+'.png',fullPage:true,animations:'disabled'});if(name==='home'||name==='catalog')await page.screenshot({path:'ui-results/liquid-'+width+'-'+name+'-viewport.png',animations:'disabled'});}
+ }
+ await page.setViewportSize({width:390,height:844});
+ for(const [name,path] of screens){await ready(page,path);await page.evaluate(()=>{window.Telegram.WebApp.colorScheme='light';window.__tgEvents.themeChanged();});await expect(page.locator('html')).toHaveAttribute('data-theme','light');await noOverflow(page);await page.screenshot({path:'ui-results/liquid-light-'+name+'.png',fullPage:true,animations:'disabled'});}
+ expect(f.errors).toEqual([]);expect(f.unexpected).toEqual([]);
+});
+
+test('Liquid dock is inset, tracks the selected route and keeps the last content reachable',async({page})=>{
+ await page.setViewportSize({width:320,height:780});const f=await fixtures(page,{mini:true,landing:true});await ready(page);
+ const dock=page.locator('.bottom-nav');const box=await dock.boundingBox();expect(box.x).toBeGreaterThanOrEqual(8);expect(box.x+box.width).toBeLessThanOrEqual(312);expect(box.y+box.height).toBeLessThanOrEqual(780-16);
+ await dock.getByRole('link',{name:'Каталог',exact:true}).click();await expect(dock.getByRole('link',{name:'Каталог',exact:true})).toHaveAttribute('aria-current','page');await expect.poll(()=>dock.evaluate(e=>getComputedStyle(e).getPropertyValue('--dock-index'))).toBe('1');
+ await dock.getByRole('link',{name:'Подписка',exact:true}).click();await expect(dock.getByRole('link',{name:'Подписка',exact:true})).toHaveAttribute('aria-current','page');await expect.poll(()=>dock.evaluate(e=>getComputedStyle(e).getPropertyValue('--dock-index'))).toBe('2');
+ await page.evaluate(()=>window.scrollTo(0,document.documentElement.scrollHeight));const last=page.locator('footer .admin-entry');const end=await last.boundingBox();const fixed=await dock.boundingBox();expect(end.y+end.height).toBeLessThanOrEqual(fixed.y);await noOverflow(page);expect(f.errors).toEqual([]);
+});
+
+test('Liquid sheet preserves focus, cancellation and a single confirmed demo mutation at 320px',async({page})=>{
+ await page.setViewportSize({width:320,height:640});const f=await fixtures(page,{mini:true,landing:true,empty:true});await ready(page,'/catalog');
+ const buy=page.getByRole('button',{name:/Оформить тестовую подписку/});await buy.click();const dialog=page.getByRole('dialog');await expect(dialog).toContainText('Списание 0 ₽');await expect(dialog).toContainText('Дождитесь статуса');await expect(dialog).toBeVisible();expect(await dialog.evaluate(e=>e.contains(document.activeElement))).toBe(true);await noOverflow(page);await page.screenshot({path:'ui-results/liquid-320-confirmation.png',animations:'disabled'});await page.keyboard.press('Escape');await expect(dialog).not.toBeVisible();expect(f.requests.filter(r=>r.path==='/orders'&&r.method==='POST')).toHaveLength(0);
+ await buy.click();await page.getByRole('button',{name:'Подтвердить',exact:true}).click();await expect(page.getByRole('heading',{name:'Подписка активна.'})).toBeVisible();expect(f.requests.filter(r=>r.path==='/orders'&&r.method==='POST')).toHaveLength(1);await noOverflow(page);await page.screenshot({path:'ui-results/liquid-success.png',fullPage:true,animations:'disabled'});expect(f.errors).toEqual([]);expect(f.unexpected).toEqual([]);
+});
+
+test('Liquid accessibility preferences remove motion and offer solid surfaces',async({page})=>{
+ await page.emulateMedia({reducedMotion:'reduce'});const f=await fixtures(page,{mini:true,landing:true});await ready(page);
+ expect(await page.locator('#page').evaluate(e=>getComputedStyle(e).animationName)).toBe('none');expect(await page.locator('.bottom-nav').evaluate(e=>getComputedStyle(e,'::before').transitionDuration)).toBe('0s');
+ const cdp=await page.context().newCDPSession(page);await cdp.send('Emulation.setEmulatedMedia',{features:[{name:'prefers-reduced-motion',value:'reduce'},{name:'prefers-reduced-transparency',value:'reduce'}]});expect(await page.evaluate(()=>matchMedia('(prefers-reduced-transparency: reduce)').matches)).toBe(true);await expect(page.locator('.dashboard-status')).toHaveCSS('backdrop-filter','none');await noOverflow(page);await page.screenshot({path:'ui-results/liquid-reduced-effects.png',animations:'disabled'});expect(f.errors).toEqual([]);
+});
+
+test('Liquid loading and failure states remain honest and recoverable',async({page})=>{
+ await page.setViewportSize({width:360,height:780});const f=await fixtures(page,{mini:true,landing:true});await ready(page,'/profile');let release;const gate=new Promise(r=>release=r);await page.route('**/api/v1/plans',async route=>{await gate;await route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({error:'TEMPORARY_UNAVAILABLE'})});});
+ await page.locator('.bottom-nav').getByRole('link',{name:'Каталог',exact:true}).click();await expect(page.locator('.loading-panel')).toBeVisible();await expect(page.locator('#page')).toHaveAttribute('aria-busy','true');await page.screenshot({path:'ui-results/liquid-loading.png',animations:'disabled'});release();await expect(page.getByRole('heading',{name:'Небольшая пауза.'})).toBeVisible();await expect(page.getByRole('button',{name:'Повторить',exact:true})).toBeVisible();await noOverflow(page);await page.screenshot({path:'ui-results/liquid-error.png',animations:'disabled'});expect(f.requests.some(r=>r.path==='/orders'&&r.method==='POST')).toBe(false);expect(f.errors).toEqual([]);
+});
+
+test('Liquid empty dashboard offers the catalog without pretending access is active',async({page})=>{
+ await page.setViewportSize({width:390,height:844});const f=await fixtures(page,{mini:true,landing:true,empty:true});await ready(page);await expect(page.getByRole('heading',{name:'Ваш первый шаг.'})).toBeVisible();await expect(page.getByRole('link',{name:'Выбрать тариф',exact:false})).toBeVisible();await expect(page.locator('.dashboard-time')).toHaveCount(0);await noOverflow(page);await page.screenshot({path:'ui-results/liquid-empty.png',animations:'disabled'});expect(f.errors).toEqual([]);
+});
