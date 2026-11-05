@@ -1,3 +1,4 @@
+import { sessionCookieName, legacySessionCookieName, cookieHeader, appendCookie } from './session-cookie.js';
 import { createHash, createHmac, randomBytes, timingSafeEqual, createPublicKey, verify } from 'node:crypto';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { ApiConfig } from '@shared-vps/runtime';
@@ -46,14 +47,12 @@ export async function validateLoginJwt(token: string, audience: string, nonce: s
 const MINI_APP_SESSION='miniapp:v1';
 export class Auth {
   constructor(private db: PrismaClient, private config: ApiConfig, private engine: SubscriptionEngine) {}
-  cookieName() { return this.config.NODE_ENV === 'production' ? '__Host-sharedvps' : 'sharedvps'; }
-  token(req: FastifyRequest) {
-    const value = req.headers.cookie?.split(';').map(x => x.trim()).find(x => x.startsWith(`${this.cookieName()}=`))?.split('=')[1] ?? '';
-    return /^[A-Za-z0-9_-]{43}$/.test(value) ? value : '';
-  }
-  cookie(reply: FastifyReply, token: string, maxAge = 604800) {
-    reply.header('set-cookie', `${this.cookieName()}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${this.config.NODE_ENV === 'production' ? '; Secure' : ''}`);
-  }
+  cookieName() { return sessionCookieName(this.config.NODE_ENV === 'production'); }
+  private cookieTokens(req:FastifyRequest) { return new Map((req.headers.cookie??'').split(';').map(v=>{const i=v.indexOf('=');return [v.slice(0,i).trim(),v.slice(i+1)] as const;})); }
+  tokens(req:FastifyRequest) {const values=this.cookieTokens(req);return [...new Set([values.get(this.cookieName()),values.get(legacySessionCookieName(this.config.NODE_ENV==='production'))].filter((v):v is string=>Boolean(v&&/^[A-Za-z0-9_-]{43}$/.test(v))))];}
+  token(req: FastifyRequest) {const values=this.cookieTokens(req);const value=values.has(this.cookieName())?values.get(this.cookieName())!:values.get(legacySessionCookieName(this.config.NODE_ENV==='production'))??'';return /^[A-Za-z0-9_-]{43}$/.test(value)?value:'';}
+  cookie(reply: FastifyReply, token: string, maxAge = 604800) {appendCookie(reply,cookieHeader(this.cookieName(),token,maxAge,this.config.NODE_ENV==='production'));}
+  clearCookies(reply:FastifyReply){this.cookie(reply,'',0);if(this.config.NODE_ENV==='production')appendCookie(reply,'__Host-sharedvps=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0; Secure');}
   async user(req: FastifyRequest, admin = false) {
     if (!this.token(req)) return fail(401, 'LOGIN_REQUIRED');
     const session = await this.db.session.findUnique({ where: { tokenHash: digest(this.token(req)) }, include: { user: true } });

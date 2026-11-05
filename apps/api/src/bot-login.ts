@@ -1,3 +1,4 @@
+import { loginCookieName, cookieHeader, appendCookie } from './session-cookie.js';
 import { createHmac, randomBytes, randomInt } from 'node:crypto';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { PrismaClient, Prisma } from '@shared-vps/database';
@@ -15,11 +16,11 @@ export class BotLogin {
   private auth: Auth;
   constructor(private db: PrismaClient, private config: ApiConfig, private engine: SubscriptionEngine) { this.auth = new Auth(db, config, engine); }
   available() { return Boolean(this.config.TELEGRAM_BOT_TOKEN && this.config.TELEGRAM_WEBHOOK_SECRET && this.config.TELEGRAM_BOT_USERNAME); }
-  proofName() { return this.config.NODE_ENV === 'production' ? '__Host-sharedvps-login' : 'sharedvps-login'; }
+  proofName() { return loginCookieName(this.config.NODE_ENV === 'production'); }
   proof(req: FastifyRequest) { const token = cookieValue(req, this.proofName()); return validToken(token) ? token : ''; }
   bind(req: FastifyRequest, reply: FastifyReply) {
     const token = this.proof(req) || randomBytes(32).toString('base64url');
-    reply.header('set-cookie', `${this.proofName()}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=600${this.config.NODE_ENV === 'production' ? '; Secure' : ''}`);
+    appendCookie(reply,cookieHeader(this.proofName(),token,600,this.config.NODE_ENV==='production'));
     return digest(token);
   }
   requireProof(req: FastifyRequest) { const token = this.proof(req); if (!token) fail(401, 'AUTH_REQUEST_UNAVAILABLE'); return digest(token); }
@@ -77,7 +78,8 @@ export class BotLogin {
       if (hashes.length) await tx.session.deleteMany({ where: { tokenHash: { in: hashes } } });
       await tx.loginRequest.updateMany({ where: { browserHash, status: { in: ['PENDING', 'CLAIMED', 'APPROVED', 'CONSUMED'] } }, data: { status: 'CANCELLED' } });
     });
-    reply.header('set-cookie', [`${this.proofName()}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${this.config.NODE_ENV === 'production' ? '; Secure' : ''}`]);
+    appendCookie(reply,cookieHeader(this.proofName(),'',0,this.config.NODE_ENV==='production'));
+    if(this.config.NODE_ENV==='production')appendCookie(reply,'__Host-sharedvps-login=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0; Secure');
   }
   async claim(tokenHash: string, telegramId: string) {
     const user = await this.engine.identity(telegramId, this.config.ADMIN_TELEGRAM_IDS);
