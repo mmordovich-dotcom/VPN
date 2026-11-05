@@ -241,7 +241,7 @@ async function embedCookieProbe(page,cookie){
   const url=new URL(route.request().url());
   if(url.hostname!=='app.axon-cookie.test'){await route.fulfill({contentType:'text/html',body:'<iframe title="Mini App cookie probe" src="https://app.axon-cookie.test/?mode='+url.searchParams.get('mode')+'"></iframe>'});return;}
   if(url.pathname==='/set'){await route.fulfill({headers:{'set-cookie':cookie},contentType:'application/json',body:'{}'});return;}
-  if(url.pathname==='/check'){await route.fulfill({contentType:'application/json',body:JSON.stringify({received:Boolean(route.request().headers().cookie?.includes(cookie.split('=')[0]+'='))})});return;}
+  if(url.pathname==='/check'){await route.fulfill({contentType:'application/json',body:JSON.stringify({received:Boolean((await route.request().allHeaders()).cookie?.includes(cookie.split('=')[0]+'='))})});return;}
   await route.fulfill({contentType:'text/html',body:'<p id="result">Loading</p><script>(async()=>{const before=await(await fetch("/check")).json();if(new URLSearchParams(location.search).get("mode")!=="read")await fetch("/set",{method:"POST"});const after=await(await fetch("/check")).json();document.querySelector("#result").textContent=JSON.stringify({before:before.received,after:after.received,visible:document.cookie.includes("sharedvps")});})()</script>'});
  });
  return async(host,mode='set')=>{await page.goto('https://'+host+'-shell.test/?mode='+mode);const result=page.frameLocator('iframe').locator('#result');await expect(result).not.toHaveText('Loading');return JSON.parse(await result.textContent());};
