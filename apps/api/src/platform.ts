@@ -34,7 +34,7 @@ export async function platformRoutes(app: FastifyInstance, db: PrismaClient, con
   botLoginRoutes(app, botLogin);
   app.post<{ Body: { initData: string } }>('/api/v1/auth/telegram', { schema: { body: { type: 'object', additionalProperties: false, required: ['initData'], properties: { initData: { type: 'string', maxLength: 12000 } } } } }, async (req, reply) => auth.login(req, reply, req.body));
   app.get('/api/v1/me', async req => auth.context(req));
-  app.post('/api/v1/auth/logout', async (req, reply) => { await db.session.deleteMany({ where: { tokenHash: digest(auth.token(req)) } }); await botLogin.cancelBrowser(req, reply); auth.cookie(reply, '', 0); return { ok: true }; });
+  app.post('/api/v1/auth/logout', async (req, reply) => { await db.session.deleteMany({ where: { tokenHash: { in: auth.tokens(req).map(digest) } } }); await botLogin.cancelBrowser(req, reply); auth.clearCookies(reply); return { ok: true }; });
   app.get('/api/v1/subscriptions', async req => (await engine.subscriptions((await auth.user(req)).id)).map(publicSubscription));
   app.get('/api/v1/orders', async req => (await db.order.findMany({ where: { userId: (await auth.user(req)).id }, include: { plan: true, payments: true }, orderBy: { createdAt: 'desc' }, take: 100 })).map(publicOrder));
   app.post<{ Body: { planId: string; operationKey: string; renewalId?: string } }>('/api/v1/orders', { schema: { body: orderBody } }, async req => publicOrder(await engine.order((await auth.user(req)).id, req.body.planId, req.body.operationKey, req.body.renewalId)));

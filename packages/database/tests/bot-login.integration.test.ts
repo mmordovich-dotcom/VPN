@@ -24,7 +24,7 @@ function cookie(response: { headers: Record<string, unknown> }, name: string) {
 const post = (path: string, payload: Record<string, unknown>, cookies = '') => app.inject({ method: 'POST', url: `/api/v1${path}`, headers: { origin, 'x-shared-vps': '1', cookie: cookies }, payload });
 async function begin(cookies = '') {
   const response = await post('/auth/bot/request', {}, cookies); expect(response.statusCode).toBe(200);
-  return { pending: response.json<Pending>(), proof: cookie(response, '__Host-sharedvps-login') };
+  return { pending: response.json<Pending>(), proof: cookie(response, '__Host-sharedvps-login-v2') };
 }
 async function send(text: string, senderId = 1001, callback = false) {
   const id = ++updateId;
@@ -66,8 +66,8 @@ describe.sequential('Stage 1.2.5 API + bot + PostgreSQL security', () => {
     await confirm(pending);
     expect((await post('/auth/bot/status', { requestId: pending.requestId }, proof)).json()).toMatchObject({ status: 'APPROVED' });
     const response = await post('/auth/bot/complete', { requestId: pending.requestId }, proof); expect(response.statusCode).toBe(200);
-    expect(String(response.headers['set-cookie'])).toContain('HttpOnly'); expect(String(response.headers['set-cookie'])).toContain('Secure'); expect(String(response.headers['set-cookie'])).toContain('SameSite=Lax');
-    const session = cookie(response, '__Host-sharedvps');
+    expect(String(response.headers['set-cookie'])).toContain('HttpOnly'); expect(String(response.headers['set-cookie'])).toContain('Secure'); expect(String(response.headers['set-cookie'])).toContain('SameSite=None'); expect(String(response.headers['set-cookie'])).toContain('Partitioned');
+    const session = cookie(response, '__Host-sharedvps-v2');
     expect((await app.inject({ url: '/api/v1/me', headers: { cookie: session } })).json()).toMatchObject(response.json());
     expect(await db.user.count()).toBe(1); expect(await db.userIdentity.count()).toBe(1);
     expect((await post('/auth/bot/complete', { requestId: pending.requestId }, proof)).statusCode).toBe(401);
@@ -112,7 +112,7 @@ describe.sequential('Stage 1.2.5 API + bot + PostgreSQL security', () => {
   it('requires the link owner to confirm, consumes the link once and never creates a session just from opening it', () => run(async () => {
     const token = await link(); expect(await db.session.count()).toBe(0);
     const response = await post('/auth/link', { token }); expect(response.statusCode).toBe(200);
-    const pending = response.json<Pending>(); const proof = cookie(response, '__Host-sharedvps-login');
+    const pending = response.json<Pending>(); const proof = cookie(response, '__Host-sharedvps-login-v2');
     expect((await post('/auth/link', { token })).statusCode).toBe(401);
     await claim(pending, 1002); await confirm(pending, 1002);
     expect((await post('/auth/bot/complete', { requestId: pending.requestId }, proof)).statusCode).toBe(401);
@@ -157,8 +157,28 @@ describe.sequential('Stage 1.2.5 API + bot + PostgreSQL security', () => {
     expect((await post('/auth/bot/complete', { requestId: first.pending.requestId }, first.proof)).json()).toMatchObject({ id: user.id });
     expect(await db.user.count()).toBe(1); expect(await db.userIdentity.count()).toBe(1); expect(await db.order.count()).toBe(1); expect(await db.subscription.count()).toBe(1); expect(await db.server.count()).toBe(1);
   }));
+  it('preserves legacy sessions, rejects cross-site mutation and revokes both session versions on logout', () => run(async () => {
+    const first = await post('/auth/code', { code: await code() });
+    const second = await post('/auth/code', { code: await code() });
+    const legacy = cookie(first, '__Host-sharedvps-v2').replace('__Host-sharedvps-v2=', '__Host-sharedvps=');
+    const current = cookie(second, '__Host-sharedvps-v2');
+    expect((await app.inject({url:'/api/v1/me',headers:{cookie:legacy}})).statusCode).toBe(200);
+    const pending = await begin(current);
+    const cookies = [legacy,current,pending.proof].join('; ');
+    const rejected = await app.inject({method:'POST',url:'/api/v1/auth/logout',headers:{origin:'https://unrelated.example','x-shared-vps':'1',cookie:cookies},payload:{}});
+    expect(rejected.statusCode).toBe(403); expect(await db.session.count()).toBe(2);
+    expect((await app.inject({method:'POST',url:'/api/v1/auth/logout',headers:{origin,cookie:cookies},payload:{}})).statusCode).toBe(403);
+    const logout = await post('/auth/logout',{},cookies); expect(logout.statusCode).toBe(200);
+    expect(await db.session.count()).toBe(0);
+    const headers = logout.headers['set-cookie']; expect(Array.isArray(headers)).toBe(true);
+    for (const name of ['__Host-sharedvps-v2','__Host-sharedvps','__Host-sharedvps-login-v2','__Host-sharedvps-login']) {
+      expect((headers as string[]).some(value=>value.startsWith(name+'=;')&&value.includes('Max-Age=0'))).toBe(true);
+    }
+    expect((await app.inject({url:'/api/v1/me',headers:{cookie:legacy}})).statusCode).toBe(401);
+    expect((await app.inject({url:'/api/v1/me',headers:{cookie:current}})).statusCode).toBe(401);
+  }));
   it('prevents silent account switching; logout revokes this session and outstanding browser requests', () => run(async () => {
-    const first = await post('/auth/code', { code: await code() }); const session = cookie(first, '__Host-sharedvps');
+    const first = await post('/auth/code', { code: await code() }); const session = cookie(first, '__Host-sharedvps-v2');
     const otherCode = await code(1002); expect((await post('/auth/code', { code: otherCode }, session)).statusCode).toBe(409);
     expect((await app.inject({ url: '/api/v1/me', headers: { cookie: session } })).json()).toMatchObject(first.json());
     const pending = await begin(session); const logout = await post('/auth/logout', {}, `${session}; ${pending.proof}`);
