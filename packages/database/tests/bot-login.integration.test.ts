@@ -170,7 +170,7 @@ describe.sequential('Stage 1.2.5 API + bot + PostgreSQL security', () => {
     expect((await app.inject({method:'POST',url:'/api/v1/auth/logout',headers:{origin,cookie:cookies},payload:{}})).statusCode).toBe(403);
     const logout = await post('/auth/logout',{},cookies); expect(logout.statusCode).toBe(200);
     expect(await db.session.count()).toBe(0);
-    const headers = logout.headers['set-cookie']; expect(Array.isArray(headers)).toBe(true);
+    const headers = logout.headers['set-cookie']; expect(Array.isArray(headers)).toBe(true); expect(headers).toHaveLength(4);
     for (const name of ['__Host-sharedvps-v2','__Host-sharedvps','__Host-sharedvps-login-v2','__Host-sharedvps-login']) {
       expect((headers as string[]).some(value=>value.startsWith(name+'=;')&&value.includes('Max-Age=0'))).toBe(true);
     }

@@ -94,7 +94,7 @@ export class SubscriptionEngine {
       if (event === 'refund') {
         const sub = await tx.subscription.findUnique({ where: { orderId } });
         if (sub) await this.cancelIn(tx, sub.userId, sub.id);
-        else if (order.renewalId) {
+        else if (order.renewalId && order.status === 'COMPLETED') {
           const renewed = await tx.subscription.findUniqueOrThrow({ where: { id: order.renewalId } });
           if (renewed.status === 'ACTIVE' && renewed.expiresAt) {
             const expiry = new Date(renewed.expiresAt.getTime() - days(order.periodDays));

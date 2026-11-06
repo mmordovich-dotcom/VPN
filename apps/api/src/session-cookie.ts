@@ -4,4 +4,5 @@ export const sessionCookieName=(production:boolean)=>production?'__Host-sharedvp
 export const legacySessionCookieName=(production:boolean)=>production?'__Host-sharedvps':'sharedvps';
 export const loginCookieName=(production:boolean)=>production?'__Host-sharedvps-login-v2':'sharedvps-login';
 export function cookieHeader(name:string,value:string,maxAge:number,production:boolean){return name+'='+value+'; Path=/; HttpOnly; SameSite='+(production?'None':'Lax')+'; Max-Age='+maxAge+(production?'; Secure; Partitioned':'');}
-export function appendCookie(reply:FastifyReply,value:string){const previous=reply.getHeader('set-cookie');reply.header('set-cookie',previous?[...(Array.isArray(previous)?previous:[String(previous)]),value]:value);}
+// Fastify appends Set-Cookie values itself; passing prior values duplicates them.
+export function appendCookie(reply:FastifyReply,value:string){reply.header('set-cookie',value);}

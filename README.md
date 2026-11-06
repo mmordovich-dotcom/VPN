@@ -1,5 +1,5 @@
-# AXON · Shared VPS Platform · Stage 1.6
-Stage 1.6 опубликована на существующем Render: main/Live c077e563032318c5eb018abbcaaabda41271f1e3 (проверено 03.11.2026). Stage 1.7 — отдельный UI/UX PR Mini App; без отдельного разрешения merge и deploy не выполняются.
+# AXON · Shared VPS Platform · Stage 1.8
+Stage 1.7 и PR №8 опубликованы на существующем Render: Live/main d14b2ec3ad9e9fe61e631e746d3eb7cf6525b07a (проверено 06.11.2026). Stage 1.8 — технический аудит и исправления в отдельном PR, ещё не production. Fastify + Prisma/PostgreSQL + Vite/TypeScript; существующий @vpnaxon_bot и полный Mini App, обычный браузер — витрина. Только DEMO: списание 0 ₽, виртуальные серверы и demo identifiers.
 
 Fastify + Prisma/PostgreSQL + Vite/TypeScript monorepo. Существующий @vpnaxon_bot становится основным интерфейсом, Mini App сохраняет полный функционал, обычный браузер показывает информационную витрину. Все интерфейсы используют общую базу и бизнес-логику. Только демонстрация: списание 0 ₽, виртуальные серверы, демонстрационные идентификаторы вместо настоящих VPN-ключей.
 
@@ -9,6 +9,8 @@ Fastify + Prisma/PostgreSQL + Vite/TypeScript monorepo. Существующий
 PUBLIC_WEB_MODE=landing временно скрывает пользовательские веб-маршруты, сохраняя их код для будущего full. Mini App требует серверно проверенной initData-сессии; URL/SDK hints не дают права доступа. Защищённая браузерная админка остаётся доступной через /#/admin. Схема БД, SubscriptionEngine, queue/leases/retry/quarantine, уведомления и вместимость не переписываются.
 
 ## Документация
+
+- [Stage 1.8: аудит и исправления](docs/stage-1.8.md), [провайдеры/платежи/экономика и блокеры](docs/commercial-readiness-stage1.8.md), [отдельный контролируемый выпуск](docs/release-stage1.8.md).
 - [Stage 1.6](docs/stage-1.6.md), [проверки](docs/verification-stage1.6.md), [изменённые файлы](docs/changes-stage1.6.md), [контролируемый выпуск](docs/release-stage1.6.md).
 - [Stage 1.5](docs/stage-1.5.md), [инструкции](docs/instructions-stage1.5.md), [поддержка](docs/support-stage1.5.md), [инциденты/компенсации](docs/incidents-stage1.5.md).
 - [Вместимость/экономика](docs/capacity-economics-stage1.5.md), [официальные источники Aeza и открытые вопросы](docs/aeza-review-stage1.5.md).
@@ -27,4 +29,4 @@ Render Free может засыпать; inline tasks и доставка раб
 
 ## Stage 1.7 · Liquid Glass Mini App
 
-[Дизайн и границы Stage 1.7](docs/stage-1.7.md): новый mobile-first визуальный язык Mini App, floating dock, синие стеклянные поверхности, dark/light и доступные упрощённые эффекты. Обычный сайт остаётся витриной. Только отдельный PR, production не изменён.
+[Дизайн и границы Stage 1.7](docs/stage-1.7.md): новый mobile-first визуальный язык Mini App, floating dock, синие стеклянные поверхности, dark/light и доступные упрощённые эффекты. Обычный сайт остаётся витриной. Опубликовано в PR №7; исправление Telegram Web — PR №8. Визуальный стиль сохраняется в Stage 1.8.
