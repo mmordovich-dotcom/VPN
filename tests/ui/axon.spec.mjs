@@ -246,6 +246,11 @@ async function embedCookieProbe(page,cookie){
  });
  return async(host,mode='set')=>{await page.goto('https://'+host+'-shell.test/?mode='+mode);const result=page.frameLocator('iframe').locator('#result');await expect(result).not.toHaveText('Loading');return JSON.parse(await result.textContent());};
 }
+// Playwright 1.56.1 disables ThirdPartyStoragePartitioning in a combined default flag.
+// Only these cookie-policy tests restore Chromium defaults; the existing UI tests are unchanged.
+// Source: microsoft/playwright v1.56.1 chromiumSwitches.ts. Update with the pinned tooling version.
+test.describe('Chromium default cookie partitioning',()=>{
+ test.use({launchOptions:{ignoreDefaultArgs:['--disable-features=AcceptCHFrame,AvoidUnnecessaryBeforeUnloadCheckSync,DestroyProfileOnBrowserClose,DialMediaRouteProvider,GlobalMediaControls,HttpsUpgrades,LensOverlay,MediaRouter,PaintHolding,ThirdPartyStoragePartitioning,Translate,AutoDeElevate,RenderDocument']}});
 test('Telegram Web reproduces Lax loss while production partitioned cookies survive and stay HttpOnly',async({page})=>{
  const {cookieHeader,sessionCookieName}=await import('../../apps/api/src/session-cookie.ts');
  let probe=await embedCookieProbe(page,'__Host-legacy-probe='+ 'A'.repeat(43)+'; Path=/; Secure; HttpOnly; SameSite=Lax');
@@ -253,6 +258,7 @@ test('Telegram Web reproduces Lax loss while production partitioned cookies surv
  await page.unroute('https://**/*');
  probe=await embedCookieProbe(page,cookieHeader(sessionCookieName(true),'B'.repeat(43),600,true));
  expect(await probe('telegram')).toEqual({before:false,after:true,visible:false});
+ expect((await page.context().cookies()).find(c=>c.name===sessionCookieName(true))).toMatchObject({httpOnly:true,secure:true,sameSite:'None',partitionKey:'https://telegram-shell.test'});
  expect(await probe('unrelated','read')).toEqual({before:false,after:false,visible:false});
  expect(await probe('telegram','read')).toEqual({before:true,after:true,visible:false});
 });
@@ -260,5 +266,8 @@ test('Telegram Web browser-proof cookie stays bound to its embedded top-level si
  const {cookieHeader,loginCookieName}=await import('../../apps/api/src/session-cookie.ts');
  const probe=await embedCookieProbe(page,cookieHeader(loginCookieName(true),'C'.repeat(43),600,true));
  expect(await probe('telegram')).toEqual({before:false,after:true,visible:false});
+ expect((await page.context().cookies()).find(c=>c.name===loginCookieName(true))).toMatchObject({httpOnly:true,secure:true,sameSite:'None',partitionKey:'https://telegram-shell.test'});
  expect(await probe('unrelated','read')).toEqual({before:false,after:false,visible:false});
+});
+
 });
