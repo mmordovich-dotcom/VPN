@@ -28,7 +28,7 @@ async function fixtures(page,options={}){
     const request=route.request();const url=new URL(request.url());const path=url.pathname.slice('/api/v1'.length);const method=request.method();const body=method==='POST'?request.postDataJSON():undefined;
     requests.push({path,query:url.search,method,body,headers:request.headers()});
     const json=(value,status=200)=>route.fulfill({status,contentType:'application/json',body:JSON.stringify(value)});
-    if(path==='/auth/config')return json({botUsername:'vpnaxon_bot',loginEnabled:true,loginMode:'bot',stage:'1.6',demo:true,publicWebMode:options.landing?'landing':'full'});
+    if(path==='/auth/config')return json({botUsername:'vpnaxon_bot',loginEnabled:true,loginMode:'bot',stage:'1.8',demo:true,publicWebMode:options.landing?'landing':'full'});
     if(path==='/me')return json(logged?{id:uid,role,miniApp:options.miniVerified!==false&&Boolean(options.mini)}:{error:'LOGIN_REQUIRED'},logged?200:401);
     if(path==='/plans')return json([plan]);
     if(path==='/auth/telegram'){

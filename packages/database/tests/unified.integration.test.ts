@@ -2,7 +2,7 @@ import {textOnlyBotVisuals} from '../../../apps/api/src/bot-visual-config.js';
 import { randomUUID, createHmac, randomBytes, generateKeyPairSync, sign } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { beforeAll, afterAll, beforeEach, describe, expect, it } from 'vitest';
+import { beforeAll, afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PrismaClient } from '@prisma/client';
 import { seedDatabase } from '../src/seed.js';
 import { SubscriptionEngine } from '../../../apps/api/src/engine.js';
@@ -99,6 +99,46 @@ describe.sequential('Stage 1.2 real PostgreSQL, shared API and Telegram', () => 
     const s = await purchase(a.id); await expect(engine.payment(a.id, s.orderId, 'refund')).rejects.toMatchObject({ code: 'ADMIN_REQUIRED' });
     await engine.payment(a.id, s.orderId, 'refund', true); await engine.payment(a.id, s.orderId, 'refund', true);
     expect(await db.payment.count({ where: { status: 'REFUNDED' } })).toBe(1); expect(await db.order.count()).toBe(3); expect((await db.subscription.findUniqueOrThrow({ where: { id: s.id } })).status).toBe('CANCELLED');
+  });
+  it('refunds a paid but unapplied renewal without shortening existing access', async () => {
+    const u = await user(); const sub = await purchase(u.id);
+    const credential = await db.accessCredential.findFirstOrThrow({ where: { subscriptionId: sub.id, revokedAt: null } });
+    const renewal = await engine.order(u.id, planId, 'unapplied-refund-key', sub.id);
+    const interrupted = vi.spyOn(engine, 'fulfill').mockRejectedValueOnce(new Error('interrupted after payment commit'));
+    try { await expect(engine.payment(u.id, renewal.id, 'confirm')).rejects.toThrow('interrupted after payment commit'); } finally { interrupted.mockRestore(); }
+    expect(await db.order.findUniqueOrThrow({ where: { id: renewal.id } })).toMatchObject({ status: 'PAID' });
+    expect(await db.payment.findFirstOrThrow({ where: { orderId: renewal.id } })).toMatchObject({ status: 'SUCCEEDED' });
+    await Promise.all([engine.payment(u.id, renewal.id, 'refund', true), engine.payment(u.id, renewal.id, 'refund', true)]);
+    const restarted = new SubscriptionEngine(db); await restarted.fulfill(renewal.id); await restarted.tick();
+    expect(await db.subscription.findUniqueOrThrow({ where: { id: sub.id } })).toMatchObject({ status: 'ACTIVE', expiresAt: sub.expiresAt, serverSlotId: sub.serverSlotId });
+    expect(await db.accessCredential.findUniqueOrThrow({ where: { id: credential.id } })).toEqual(credential);
+    expect(await db.serverSlot.findUniqueOrThrow({ where: { id: sub.serverSlotId! } })).toMatchObject({ status: 'OCCUPIED' });
+    expect(await db.subscription.count()).toBe(1); expect(await db.server.count()).toBe(1);
+    expect(await db.order.findUniqueOrThrow({ where: { id: renewal.id } })).toMatchObject({ status: 'CANCELLED' });
+    expect(await db.payment.findFirstOrThrow({ where: { orderId: renewal.id } })).toMatchObject({ status: 'REFUNDED' });
+  });
+  it('does not undo an unpaid failed renewal or activate it after failure', async () => {
+    const u = await user(); const sub = await purchase(u.id);
+    const renewal = await engine.order(u.id, planId, 'failed-renewal-refund', sub.id);
+    await engine.payment(u.id, renewal.id, 'fail');
+    await expect(engine.payment(u.id, renewal.id, 'refund', true)).rejects.toMatchObject({ code: 'PAYMENT_NOT_PAID' });
+    await engine.fulfill(renewal.id);
+    expect(await db.subscription.findUniqueOrThrow({ where: { id: sub.id } })).toMatchObject({ status: 'ACTIVE', expiresAt: sub.expiresAt });
+    expect(await db.subscription.count()).toBe(1);
+  });
+  it('two independent clients racing for the last place keep three clients per VPS and distinct credentials', async () => {
+    const existing = [await purchase((await user()).id), await purchase((await user()).id)];
+    const buyers = await Promise.all([user(), user()]); const orders = await Promise.all(buyers.map(u => engine.order(u.id, planId, randomUUID())));
+    const second = new PrismaClient({ datasources: { db: { url } } });
+    try {
+      await Promise.all([engine.payment(buyers[0]!.id, orders[0]!.id, 'confirm'), new SubscriptionEngine(second).payment(buyers[1]!.id, orders[1]!.id, 'confirm')]);
+      expect(await db.server.count()).toBe(2);
+      expect(await db.subscription.count({ where: { status: 'ACTIVE', serverSlot: { serverId: existing[0]!.serverSlot!.serverId } } })).toBe(3);
+      const credentials = await db.accessCredential.findMany({ where: { revokedAt: null }, select: { demoIdentifier: true, subscriptionId: true } });
+      expect(credentials).toHaveLength(4); expect(new Set(credentials.map(c => c.demoIdentifier)).size).toBe(4); expect(new Set(credentials.map(c => c.subscriptionId)).size).toBe(4);
+      const foreignOrder = await db.order.create({ data: { userId: buyers[1]!.id, planId, amount: 17000, currency: 'RUB' } });
+      await expect(db.subscription.create({ data: { userId: buyers[0]!.id, planId, orderId: foreignOrder.id, status: 'PENDING' } })).rejects.toMatchObject({ code: 'P2003' });
+    } finally { await second.$disconnect(); }
   });
   it('API catalog, authenticated purchase, reload/restart, own data, role checks and CSRF', async () => {
     let app = await buildApp(config()); const u = await user(); const other = await user(); const session = await cookie(u.id); const h = headers(session);
