@@ -117,11 +117,11 @@ describe.sequential('Stage 1.2 real PostgreSQL, shared API and Telegram', () => 
     expect(await db.order.findUniqueOrThrow({ where: { id: renewal.id } })).toMatchObject({ status: 'CANCELLED' });
     expect(await db.payment.findFirstOrThrow({ where: { orderId: renewal.id } })).toMatchObject({ status: 'REFUNDED' });
   });
-  it('does not undo an unpaid failed renewal or activate it after cancellation', async () => {
+  it('does not undo an unpaid failed renewal or activate it after failure', async () => {
     const u = await user(); const sub = await purchase(u.id);
     const renewal = await engine.order(u.id, planId, 'failed-renewal-refund', sub.id);
     await engine.payment(u.id, renewal.id, 'fail');
-    await expect(engine.payment(u.id, renewal.id, 'refund', true)).rejects.toMatchObject({ code: 'PAYMENT_FINAL' });
+    await expect(engine.payment(u.id, renewal.id, 'refund', true)).rejects.toMatchObject({ code: 'PAYMENT_NOT_PAID' });
     await engine.fulfill(renewal.id);
     expect(await db.subscription.findUniqueOrThrow({ where: { id: sub.id } })).toMatchObject({ status: 'ACTIVE', expiresAt: sub.expiresAt });
     expect(await db.subscription.count()).toBe(1);

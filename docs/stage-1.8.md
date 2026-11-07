@@ -38,7 +38,7 @@ Neon patient-queen-83814443 / production br-rapid-butterfly-b4t863o9 / neondb: P
 
 ## Проверки и предел доказательств
 
-Базовые 263 теста предыдущего выпуска не считаются результатом этого PR. Итоговые количества, точный SHA и ссылки GitHub Actions фиксируются в PR после облачных прогонов: Verify foundation (build/typecheck/Prisma/unit/integration/artifact/cloud) и AXON browser. Полные сборки и тесты выполняются в GitHub, без локального терминала пользователя. Три новых integration case ожидают регрессионный прогон; до зелёного результата код не объявляется проверенным.
+Базовые 263 теста предыдущего выпуска не считаются результатом этого PR. Итоговые количества, точный SHA и ссылки GitHub Actions фиксируются в PR после облачных прогонов: Verify foundation (build/typecheck/Prisma/unit/integration/artifact/cloud) и AXON browser. Полные сборки и тесты выполняются в GitHub, без локального терминала пользователя. Набор содержит 266 тестов: 127 unit, 113 integration и 26 browser. Фактический успешный результат относится только к конкретному head и его зелёным checks в [PR №9](https://github.com/mmordovich-dotcom/VPN/pull/9/checks); этот документ не заменяет проверку последнего коммита. Первые прогоны выявили устаревшее ожидание stage 1.6 и неверное ожидание кода ошибки нового теста refund неоплаченного заказа; ожидания приведены к фактическому контракту PAYMENT_NOT_PAID без изменения бизнес-переходов.
 
 Существующие tests/reliability покрывают business commit до queue ack, DB acknowledgement outage, restart, competing consumers, retry/backoff, unknown outgoing result quarantine и cleanup без удаления бизнеса. Это управляемые fault injections в изолированной БД, не эксперимент отключения production Neon. Реальный Telegram после нового кода ещё не проверен: в PR нет deploy. Предыдущая приёмка владельцем Telegram Web после PR №8 остаётся baseline, не новой приёмкой Stage 1.8.
 
@@ -47,3 +47,7 @@ Neon patient-queen-83814443 / production br-rapid-butterfly-b4t863o9 / neondb: P
 Ноль новых миграций/env/dependencies. Старые пять миграций, Prisma schema, тарифы, стоимость/лимит серверов, DEMO gates, UI/JS/CSS Mini App, bot menus/visuals и third-party partitioned cookie tests сохраняются. Не создавались сервисы/боты/серверы/платежи; production не изменена. Рабочие данные не загружались в репозиторий.
 
 Дальнейшие решения и коммерческие блокеры: [провайдеры, платежи, экономика и право](commercial-readiness-stage1.8.md). Порядок отдельного DEMO-выпуска: [release checklist](release-stage1.8.md).
+
+## Контроль сохранности 07.11.2026
+
+Повторный read-only Neon snapshot сохранил агрегаты: 1 user, 6 orders, 3 subscriptions, 1 ticket, 1 message, 5 applied migrations; PAID/DEAD jobs = 0. Прямых изменений данных нет. Последний час Render Logs пуст (Free idle); в доступном окне последних двух дней отдельно проверяются системные ошибки — отсутствие свежих записей не равно круглосуточному мониторингу. Итоговые технические доказательства и точный проверенный SHA предоставляются в PR/отчёте после CI.
