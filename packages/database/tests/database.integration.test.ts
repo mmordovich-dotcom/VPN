@@ -7,6 +7,14 @@ import { seedDatabase } from '../src/seed.js';
 import { buildApp } from '../../../apps/api/src/app.js';
 import { readApiConfig } from '@shared-vps/runtime';
 
+
+// PostgreSQL 18 reports RESTRICT as SQLSTATE 23001; Prisma 6 leaves it as an unknown request error.
+async function expectSlotRestricted(deletion:PromiseLike<unknown>) {
+  const error:unknown=await Promise.resolve(deletion).then(()=>null,(e:unknown)=>e);
+  if(error instanceof Prisma.PrismaClientKnownRequestError)expect(error.code).toBe('P2003');
+  else {expect(error).toBeInstanceOf(Prisma.PrismaClientUnknownRequestError);expect((error as Error).message).toContain('code: "23001"');expect((error as Error).message).toContain('subscriptions_server_slot_id_fkey');}
+}
+
 const schema = `stage11_test_${randomUUID().replaceAll('-', '')}`;
 let admin: PrismaClient | undefined;
 let db: PrismaClient;
@@ -103,8 +111,8 @@ describe.sequential('PostgreSQL migrations and invariants', () => {
     // Assert Prisma's structured foreign-key error, not its formatted message.
     // Reuse one promise so the deletion is attempted exactly once.
     const deletion = Promise.resolve(db.serverSlot.delete({ where: { id: seat.id } }));
-    await expect(deletion).rejects.toBeInstanceOf(Prisma.PrismaClientKnownRequestError);
-    await expect(deletion).rejects.toMatchObject({ code: 'P2003' });
+    await expectSlotRestricted(deletion);
+    expect(await db.serverSlot.findUnique({where:{id:seat.id}})).not.toBeNull();
 
     expect(await db.serverSlot.findUniqueOrThrow({ where: { id: seat.id } })).toEqual(slotBefore);
     expect(await db.subscription.findMany({ where: { serverSlotId: seat.id }, orderBy: { id: 'asc' } })).toEqual(historyBefore);

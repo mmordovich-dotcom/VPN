@@ -1,6 +1,6 @@
 # AXON — Stage 1.9: Payment & Infrastructure Foundation
 
-База: main a3476347d8c1b854177df4ef63d41e81a1042fa6, опубликованный и принятый пользователем Stage 1.8. Эта ветка — разработка, не production. DEMO остаётся единственным режимом приложения; цены 170 ₽/30 дней и действующие настройки не изменены. Liquid Glass, бот, Premium-эмодзи, баннеры, auth, поддержка и admin сохранены.
+База: main a3476347d8c1b854177df4ef63d41e81a1042fa6, опубликованный и принятый пользователем Stage 1.8. Эта ветка — разработка, не production. Метаданные подготовленной версии 1.9/0.9.0; действующий production остаётся 1.8/0.8.0. DEMO остаётся единственным режимом приложения; цены 170 ₽/30 дней и действующие настройки не изменены. Liquid Glass, бот, Premium-эмодзи, баннеры, auth, поддержка и admin сохранены.
 
 ## Что реализовано
 
@@ -41,3 +41,7 @@ MockSbpProvider и EXTERNAL_TEST работают без HTTP, SDK и аккау
 ## Готовность Stage 2.0
 
 Готовность основы определяется зелёными CI и review; коммерческий запуск NO-GO. Не завершены: действующие договоры/юрисдикция продавца, подтверждённые API и sandbox провайдеров, реальные Stars invoices/charge reconciliation/refunds, partial refunds/disputes/fees/fiscal ledger, durable renewal/termination/revocation реальных ресурсов, индивидуальные реальные credentials, независимый backup restore drill, всегда работающий hosting/monitoring и нагрузочные SLO. Mock/fault tests доказывают только свойства нашей модели. Stage 2.0 не начинается автоматически.
+
+## Совместимость PostgreSQL 18
+
+CI дополнен matrix PostgreSQL 16.13 и 18. В PostgreSQL 18 прежний RESTRICT FK возвращает SQLSTATE 23001; Prisma 6.19.3 оставляет его PrismaClientUnknownRequestError вместо P2003. Три старых теста сохранности уточнены: допускают P2003 либо конкретный 23001 + subscriptions_server_slot_id_fkey, проверяют сохранность строки. Сама FK/бизнес-логика не менялась; произвольная ошибка не считается успехом проверки.
