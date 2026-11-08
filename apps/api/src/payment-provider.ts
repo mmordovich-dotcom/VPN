@@ -27,7 +27,7 @@ export class TestPaymentProvider implements PaymentProvider {
     const s=this.name==='STARS_TEST' && p.successful_payment && typeof p.successful_payment==='object' ? p.successful_payment as Record<string,unknown> : null;
     const value = { operationId: s?.invoice_payload ?? p.operationId, eventId:p.eventId, externalId:s?.telegram_payment_charge_id ?? p.externalId, amount:s?.total_amount ?? p.amount, currency:s?.currency ?? p.currency, state:s?'SUCCEEDED':p.state, mode:p.mode, provider:p.provider };
     if(value.mode!=='SANDBOX' || value.provider!==this.name || typeof value.operationId!=='string' || !/^[a-f0-9-]{36}$/.test(value.operationId) || typeof value.eventId!=='string' || !/^[A-Za-z0-9:_-]{1,180}$/.test(value.eventId) || typeof value.externalId!=='string' || !/^test:[A-Za-z0-9:_-]{1,175}$/.test(value.externalId) || !Number.isSafeInteger(value.amount) || Number(value.amount)<=0 || !states.includes(String(value.state)) || value.currency!==(this.name==='STARS_TEST'?'XTR':'RUB')) throw new Error('INVALID_TEST_EVENT');
-    const result=value as PaymentObservation; trusted.add(result); return result;
+    const result=Object.freeze(value) as PaymentObservation; trusted.add(result); return result;
   }
   async observe(_operationKey: string): Promise<PaymentObservation | null> { return null; }
 }

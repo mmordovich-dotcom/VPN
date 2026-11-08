@@ -54,7 +54,7 @@ export class ResourceFoundation {
       const result=reconcile?await this.provider.lookup(request):null;
       if(result?.state==='UNKNOWN'||result?.state==='ABSENT')fail(503,'RESOURCE_RESULT_UNKNOWN');
       const externalId=result?.state==='FOUND'?result.externalId:await this.provider.create(request);
-      if(!/^demo:vps:[a-f0-9-]{36}$/.test(externalId))fail(409,'MOCK_RESOURCE_ID_REQUIRED');
+      if(externalId!=='demo:vps:'+op.id)fail(409,'MOCK_RESOURCE_ID_REQUIRED');
       await locked(this.db,async tx=>{
         const current=await tx.resourceOperation.findUniqueOrThrow({where:{id:op.id}});const now=await databaseNow(tx);
         if(current.leaseToken!==token||current.status!=='RUNNING'||!current.leaseUntil||current.leaseUntil<=now)fail(503,'RESOURCE_LEASE_LOST');

@@ -75,6 +75,10 @@ export class PaymentFoundation {
   async audit(operationId:string){
     const op=await this.db.paymentOperation.findUniqueOrThrow({where:{id:operationId},include:{order:true,ledger:true,payment:true}});
     const captures=op.ledger.filter(e=>e.kind==='CAPTURE');const refunds=op.ledger.filter(e=>e.kind==='REFUND');
-    return {operationId:op.id,status:op.status,captured:captures.reduce((s,e)=>s+e.amount,0),refunded:refunds.reduce((s,e)=>s+e.amount,0),currency:op.currency,consistent:captures.length<=1&&refunds.length<=1&&refunds.length<=captures.length&&(op.status!=='SUCCEEDED'||op.payment.status==='SUCCEEDED'&&['PAID','COMPLETED'].includes(op.order.status))&&(op.status!=='REFUNDED'||op.payment.status==='REFUNDED'&&op.order.status==='CANCELLED')};
+    const captured=captures.reduce((s,e)=>s+e.amount,0),refunded=refunds.reduce((s,e)=>s+e.amount,0);
+    const evidenceValid=op.ledger.every(e=>e.amount===op.amount&&e.currency===op.currency)&&captures.length<=1&&refunds.length<=captures.length;
+    const totalsValid=op.status==='SUCCEEDED'?captures.length===1&&captured===op.amount&&refunded===0:op.status==='REFUNDED'?captures.length===1&&refunds.length===1&&captured===op.amount&&refunded===op.amount:captured===0&&refunded===0;
+    const stateValid=op.status==='SUCCEEDED'?op.payment.status==='SUCCEEDED'&&['PAID','PROCESSING','COMPLETED'].includes(op.order.status):op.status==='REFUNDED'?op.payment.status==='REFUNDED'&&op.order.status==='CANCELLED':['FAILED','CANCELLED'].includes(op.status)?op.payment.status==='FAILED':op.payment.status==='PENDING';
+    return {operationId:op.id,status:op.status,captured,refunded,currency:op.currency,consistent:evidenceValid&&totalsValid&&stateValid&&op.payment.orderId===op.orderId&&op.payment.amount===op.order.amount&&op.payment.currency===op.order.currency};
   }
 }
