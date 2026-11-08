@@ -1,3 +1,4 @@
+import { recordDemoPayment, releaseReservation } from './payment-records.js';
 import { randomUUID } from 'node:crypto';
 import { databaseNow, enqueue, JobQueue, JobFailure } from './job-queue.js';
 import { scheduleReminders, notifyOrder, notifySubscription } from './notification-events.js';
@@ -80,17 +81,25 @@ export class SubscriptionEngine {
     });
   }
   async payment(userId: string, orderId: string, event: 'confirm' | 'fail' | 'cancel' | 'refund', admin = false) {
-    await locked(this.db, async tx => {
+    await locked(this.db, tx => this.applyPaymentIn(tx,userId,orderId,event,admin));
+    if (event === 'confirm') await this.fulfill(orderId);
+    return this.db.order.findUniqueOrThrow({ where: { id: orderId }, include: { subscription: { include: subscriptionInclude } } });
+  }
+  async applyPaymentIn(tx:Tx,userId:string,orderId:string,event:'confirm'|'fail'|'cancel'|'refund',admin=false,foundation=false) {
       const order = await tx.order.findFirst({ where: { id: orderId, ...(admin ? {} : { userId }) }, include: { payments: true } });
       if (!order) fail(404, 'ORDER_NOT_FOUND');
       if (event === 'refund' && !admin) fail(403, 'ADMIN_REQUIRED');
       const payment = order.payments[0]; if (!payment) fail(409, 'PAYMENT_MISSING');
+      const attached=await tx.paymentOperation.findUnique({where:{orderId}});
+      if(attached?.mode==='SANDBOX' && !foundation) fail(409,'SANDBOX_EVENT_REQUIRED');
       const status = new MockPaymentProvider().transition(payment.status, event);
       if (payment.status === status && !(event === 'cancel' && order.status !== 'CANCELLED')) return;
       await tx.payment.update({ where: { id: payment.id }, data: { status } });
+      if(!foundation) await recordDemoPayment(tx,payment,event,status);
+      if(status!=='SUCCEEDED') await releaseReservation(tx,orderId);
       const changed = await tx.order.update({ where: { id: order.id }, data: { status: status === 'SUCCEEDED' ? 'PAID' : event === 'fail' ? 'FAILED' : 'CANCELLED' } });
       await notifyOrder(tx, changed);
-      if (status === 'SUCCEEDED') await enqueue(tx, 'FULFILL_ORDER', `fulfill:${order.id}`, { orderId: order.id });
+      if (status === 'SUCCEEDED') await enqueue(tx, foundation ? 'FOUNDATION_FULFILL' : 'FULFILL_ORDER', `${foundation?'foundation':'fulfill'}:${order.id}`, { orderId: order.id });
       if (event === 'refund') {
         const sub = await tx.subscription.findUnique({ where: { orderId } });
         if (sub) await this.cancelIn(tx, sub.userId, sub.id);
@@ -104,9 +113,6 @@ export class SubscriptionEngine {
         }
       }
       await audit(tx, userId, `demo.payment.${event}`, order.id);
-    });
-    if (event === 'confirm') await this.fulfill(orderId);
-    return this.db.order.findUniqueOrThrow({ where: { id: orderId }, include: { subscription: { include: subscriptionInclude } } });
   }
   async fulfill(orderId: string) {
     try {
@@ -129,7 +135,12 @@ export class SubscriptionEngine {
           const setting = (key: string, fallback: number) => Number(settings.find(x => x.key === key)?.value ?? fallback);
           if (!Number.isInteger(order.plan.maxUsersPerServer) || order.plan.maxUsersPerServer < 1 || order.plan.maxUsersPerServer > 4) fail(409, 'INVALID_CAPACITY');
           const allocationLimit = Math.min(order.plan.maxUsersPerServer, approved ? 4 : 3);
-          let slot = await tx.serverSlot.findFirst({ where: { status: 'AVAILABLE', server: { status: 'ACTIVE', capacity: { lte: allocationLimit } }, subscriptions: { none: { status: { in: ['PENDING', 'ACTIVE', 'SUSPENDED'] } } } }, orderBy: [{ serverId: 'asc' }, { slotNumber: 'asc' }] });
+          const held=await tx.resourceReservation.findUnique({where:{orderId}});
+          const operation=await tx.paymentOperation.findUnique({where:{orderId}});
+          if(operation?.mode==='SANDBOX' && !held) fail(503,'RESOURCE_RESERVATION_REQUIRED');
+          if(held?.status==='HELD' && !held.serverSlotId) fail(503,'RESOURCE_NOT_READY');
+          let slot = held?.status==='HELD' && held.serverSlotId ? await tx.serverSlot.findFirst({where:{id:held.serverSlotId,status:'RESERVED',server:{status:'ACTIVE',capacity:{lte:Math.min(allocationLimit,3)}},subscriptions:{none:{status:{in:['PENDING','ACTIVE','SUSPENDED']}}}}}) : await tx.serverSlot.findFirst({ where: { status: 'AVAILABLE', server: { status: 'ACTIVE', capacity: { lte: allocationLimit } }, subscriptions: { none: { status: { in: ['PENDING', 'ACTIVE', 'SUSPENDED'] } } } }, orderBy: [{ serverId: 'asc' }, { slotNumber: 'asc' }] });
+          if(held?.status==='HELD' && !slot) fail(409,'RESERVATION_INVALID');
           if (!slot) {
             const requestedCapacity = setting('server.default_capacity', 3);
             if (!Number.isInteger(requestedCapacity) || requestedCapacity < 1 || requestedCapacity > 4) fail(409, 'INVALID_CAPACITY');
@@ -153,6 +164,7 @@ export class SubscriptionEngine {
         await audit(tx, order.userId, order.renewalId ? 'subscription.renewed' : 'subscription.activated', sub.id, { orderId, expiresAt: expiry.toISOString() });
         await scheduleReminders(tx, sub);
         if (order.renewalId) await notifySubscription(tx, 'RENEWED', sub, orderId);
+        await tx.resourceReservation.updateMany({where:{orderId,status:'HELD'},data:{status:'CONSUMED'}});
         const completed = await tx.order.update({ where: { id: orderId }, data: { status: 'COMPLETED', lastError: null } });
         await notifyOrder(tx, completed);
         return completed;
@@ -205,7 +217,7 @@ export class SubscriptionEngine {
   async recover(cursor?: string, root?: string) {
     await this.db.$transaction(async tx => {
       const orders = await tx.order.findMany({where:{status:'PAID',...(cursor?{id:{gt:cursor}}:{})},take:100,orderBy:{id:'asc'}});
-      for (const order of orders) await enqueue(tx,'FULFILL_ORDER', 'fulfill:'+order.id,{orderId:order.id});
+      for (const order of orders) { const op=await tx.paymentOperation.findUnique({where:{orderId:order.id}}); const sandbox=op?.mode==='SANDBOX'; await enqueue(tx,sandbox?'FOUNDATION_FULFILL':'FULFILL_ORDER',(sandbox?'foundation:':'fulfill:')+order.id,{orderId:order.id}); }
       if(root && orders.length===100) await enqueue(tx,'RECOVER',root+':'+orders.at(-1)!.id,{root,cursor:orders.at(-1)!.id});
     });
   }

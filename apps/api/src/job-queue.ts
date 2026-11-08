@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { PrismaClient, Prisma, BackgroundJob } from '@shared-vps/database';
 
 export type JobTx = Prisma.TransactionClient;
-export type JobKind = 'FULFILL_ORDER' | 'LIFECYCLE' | 'RECOVER' | 'CLEANUP' | 'NOTIFY';
+export type JobKind = 'FULFILL_ORDER' | 'LIFECYCLE' | 'RECOVER' | 'CLEANUP' | 'NOTIFY' | 'PAYMENT_EVENT' | 'FOUNDATION_FULFILL' | 'PAYMENT_RECOVER';
 export class JobFailure extends Error {
   constructor(public code: string, public permanent = false, public retryAfterMs = 0, public ambiguous = false) { super(code); }
 }

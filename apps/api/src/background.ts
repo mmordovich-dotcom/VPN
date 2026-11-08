@@ -1,3 +1,5 @@
+import { PaymentFoundation } from './payment-foundation.js';
+import { ResourceFoundation } from './resource-foundation.js';
 import { IncidentService } from './incidents.js';
 import { randomUUID } from 'node:crypto';
 import type { PrismaClient, BackgroundJob } from '@shared-vps/database';
@@ -28,6 +30,7 @@ export class BackgroundRuntime {
     await this.db.$transaction(async tx => {
       await enqueue(tx,'LIFECYCLE',`lifecycle:${minute}`,{root:`lifecycle:${minute}`});
       await enqueue(tx,'RECOVER',`recover:${minute}`,{root:`recover:${minute}`});
+      await enqueue(tx,'PAYMENT_RECOVER',`payment-recover:${minute}`,{root:`payment-recover:${minute}`});
       await enqueue(tx,'CLEANUP',`cleanup:${hour}`);
     });
   }
@@ -37,6 +40,9 @@ export class BackgroundRuntime {
     const root = typeof body.root === 'string' ? body.root : undefined;
     try {
       if (job.kind === 'FULFILL_ORDER') { if (typeof body.orderId !== 'string') throw new JobFailure('INVALID_ORDER_JOB',true); await this.engine.fulfill(body.orderId); }
+      else if(job.kind==='PAYMENT_EVENT'){if(typeof body.eventId!=='string')throw new JobFailure('INVALID_PAYMENT_EVENT_JOB',true);await new PaymentFoundation(this.db,this.engine).process(body.eventId);}
+      else if(job.kind==='FOUNDATION_FULFILL'){if(typeof body.orderId!=='string')throw new JobFailure('INVALID_ORDER_JOB',true);await new ResourceFoundation(this.db,this.engine).fulfill(body.orderId);}
+      else if(job.kind==='PAYMENT_RECOVER'){const next=await new PaymentFoundation(this.db,this.engine).recover(cursor);if(next)await this.db.$transaction(tx=>enqueue(tx,'PAYMENT_RECOVER',(root??job.key)+':'+next,{root:root??job.key,cursor:next}));}
       else if (job.kind === 'LIFECYCLE') { await this.engine.maintain(cursor,root); await new IncidentService(this.db,this.engine).alertLongIncidents(); }
       else if (job.kind === 'RECOVER') await this.engine.recover(cursor,root);
       else if (job.kind === 'CLEANUP') await this.cleanup();

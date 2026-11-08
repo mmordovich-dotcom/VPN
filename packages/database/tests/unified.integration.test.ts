@@ -3,13 +3,21 @@ import { randomUUID, createHmac, randomBytes, generateKeyPairSync, sign } from '
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { beforeAll, afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { PrismaClient } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
 import { seedDatabase } from '../src/seed.js';
 import { SubscriptionEngine } from '../../../apps/api/src/engine.js';
 import { digest, validateInitData, validateLoginJwt } from '../../../apps/api/src/auth.js';
 import { TelegramGateway } from '../../../apps/api/src/telegram.js';
 import { buildApp } from '../../../apps/api/src/app.js';
 import { readApiConfig } from '@shared-vps/runtime';
+
+// PostgreSQL 18 reports RESTRICT as SQLSTATE 23001; Prisma 6 leaves it as an unknown request error.
+async function expectSlotRestricted(deletion:PromiseLike<unknown>) {
+  const error:unknown=await Promise.resolve(deletion).then(()=>null,(e:unknown)=>e);
+  if(error instanceof Prisma.PrismaClientKnownRequestError)expect(error.code).toBe('P2003');
+  else {expect(error).toBeInstanceOf(Prisma.PrismaClientUnknownRequestError);expect((error as Error).message).toContain('code: "23001"');expect((error as Error).message).toContain('subscriptions_server_slot_id_fkey');}
+}
+
 const schema = `stage12_test_${randomUUID().replaceAll('-', '')}`;
 let admin: PrismaClient; let db: PrismaClient; let url: string; let planId: string; let engine: SubscriptionEngine;
 const config = () => readApiConfig({ DATABASE_URL: url, LOG_LEVEL: 'silent', TELEGRAM_BOT_TOKEN: '123456:fake-test-token', TELEGRAM_WEBHOOK_SECRET: 'a'.repeat(40), PUBLIC_ORIGIN: 'https://platform.example.com' });
@@ -63,7 +71,8 @@ describe.sequential('Stage 1.2 real PostgreSQL, shared API and Telegram', () => 
     expect(await db.subscription.findUnique({ where: { id: s.id } })).toMatchObject({ status: 'CANCELLED', serverSlotId: s.serverSlotId });
     expect((await db.accessCredential.findFirstOrThrow({ where: { subscriptionId: s.id } })).revokedAt).not.toBeNull();
     expect(await db.order.count()).toBe(2);
-    await expect(db.serverSlot.delete({ where: { id: s.serverSlotId! } })).rejects.toMatchObject({ code: 'P2003' });
+    await expectSlotRestricted(db.serverSlot.delete({ where: { id: s.serverSlotId! } }));
+    expect(await db.serverSlot.findUnique({where:{id:s.serverSlotId!}})).not.toBeNull();
   });
   it('renewal adds one period exactly once and extends the virtual server rental independently', async () => {
     const u = await user(); const s = await purchase(u.id); const other = await purchase((await user()).id);
@@ -247,7 +256,7 @@ describe.sequential('Stage 1.2 real PostgreSQL, shared API and Telegram', () => 
       expect(await old.subscription.findUniqueOrThrow({ where: { id: sub.id } })).toEqual(sub);
       expect(await old.accessCredential.findUniqueOrThrow({ where: { id: credential.id } })).toEqual(credential);
       expect(await old.order.findUniqueOrThrow({ where: { id: orderId } })).toMatchObject({ status: 'COMPLETED', operationKey: null, periodDays: 30 });
-      await expect(old.serverSlot.delete({ where: { id: slot.id } })).rejects.toMatchObject({ code: 'P2003' });
+      await expectSlotRestricted(old.serverSlot.delete({ where: { id: slot.id } }));
       expect(await old.serverSlot.findUniqueOrThrow({ where: { id: slot.id } })).toEqual(slot);
     } finally { await old.$disconnect(); await admin.$executeRawUnsafe(`DROP SCHEMA "${upgradeSchema}" CASCADE`); }
   });

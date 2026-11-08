@@ -150,6 +150,8 @@ model Order {
   updatedAt    DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
   user         User            @relation(fields: [userId], references: [id], onDelete: Restrict)
   plan         Plan            @relation(fields: [planId], references: [id], onDelete: Restrict)
+  paymentOperation PaymentOperation?
+  reservations ResourceReservation[]
   payments     Payment[]
   subscription Subscription?
 
@@ -172,6 +174,7 @@ model Payment {
   status            PaymentStatus   @default(PENDING)
   createdAt         DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt         DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
+  operation PaymentOperation?
   order             Order           @relation(fields: [orderId], references: [id], onDelete: Restrict)
 
   @@unique([provider, externalPaymentId])
@@ -192,6 +195,7 @@ model Server {
   expiresAt        DateTime?      @map("expires_at") @db.Timestamptz(3)
   createdAt        DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt        DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
+  resourceOperation ResourceOperation?
   slots            ServerSlot[]
   incidents ServiceIncident[]
 
@@ -209,6 +213,7 @@ model ServerSlot {
   createdAt     DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt     DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
   server        Server         @relation(fields: [serverId], references: [id], onDelete: Restrict)
+  reservations ResourceReservation[]
   subscriptions Subscription[]
 
   @@unique([serverId, slotNumber])
@@ -525,4 +530,102 @@ model SubscriptionCompensation {
   @@unique([incidentId, subscriptionId])
   @@index([subscriptionId, createdAt])
   @@map("subscription_compensations")
+}
+
+// Stage 1.9: internal test-only foundation. No LIVE values or credentials.
+model PaymentOperation {
+  id String @id @default(uuid()) @db.Uuid
+  orderId String @unique @map("order_id") @db.Uuid
+  paymentId String @unique @map("payment_id") @db.Uuid
+  key String @unique @db.VarChar(180)
+  provider String @db.VarChar(32)
+  mode String @db.VarChar(16)
+  externalId String @map("external_id") @db.VarChar(180)
+  amount Int
+  currency String @db.Char(3)
+  status String @default("PENDING") @db.VarChar(16)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  order Order @relation(fields:[orderId], references:[id], onDelete:Restrict)
+  payment Payment @relation(fields:[paymentId], references:[id], onDelete:Restrict)
+  events PaymentEvent[]
+  ledger FinancialEntry[]
+  @@unique([provider, mode, externalId])
+  @@index([status, updatedAt, id])
+  @@map("payment_operations")
+}
+model PaymentEvent {
+  id String @id @default(uuid()) @db.Uuid
+  operationId String @map("operation_id") @db.Uuid
+  eventId String @map("event_id") @db.VarChar(180)
+  digest String @db.VarChar(64)
+  kind String @db.VarChar(16)
+  amount Int
+  currency String @db.Char(3)
+  operation PaymentOperation @relation(fields:[operationId], references:[id], onDelete:Restrict)
+  ledger FinancialEntry[]
+  processing PaymentEventProcessing?
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  @@unique([operationId, eventId])
+  @@index([createdAt, id])
+  @@map("payment_events")
+}
+model PaymentEventProcessing {
+  eventId String @id @map("event_id") @db.Uuid
+  status String @default("PENDING") @db.VarChar(16)
+  lastError String? @map("last_error") @db.VarChar(64)
+  event PaymentEvent @relation(fields:[eventId], references:[id], onDelete:Restrict)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  @@index([status, updatedAt, eventId])
+  @@map("payment_event_processing")
+}
+model FinancialEntry {
+  id String @id @default(uuid()) @db.Uuid
+  operationId String @map("operation_id") @db.Uuid
+  eventId String @map("event_id") @db.Uuid
+  key String @unique @db.VarChar(200)
+  kind String @db.VarChar(16)
+  amount Int
+  currency String @db.Char(3)
+  operation PaymentOperation @relation(fields:[operationId], references:[id], onDelete:Restrict)
+  event PaymentEvent @relation(fields:[eventId], references:[id], onDelete:Restrict)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  @@index([operationId, createdAt, id])
+  @@map("financial_entries")
+}
+model ResourceOperation {
+  id String @id @default(uuid()) @db.Uuid
+  key String @unique @db.VarChar(180)
+  mode String @default("SANDBOX") @db.VarChar(16)
+  provider String @default("MOCK") @db.VarChar(16)
+  status String @default("PENDING") @db.VarChar(16)
+  capacity Int
+  monthlyCost Int @map("monthly_cost")
+  currency String @default("RUB") @db.Char(3)
+  serverId String? @unique @map("server_id") @db.Uuid
+  externalId String? @map("external_id") @db.VarChar(180)
+  leaseToken String? @map("lease_token") @db.Uuid
+  leaseUntil DateTime? @map("lease_until") @db.Timestamptz(3)
+  lastError String? @map("last_error") @db.VarChar(64)
+  server Server? @relation(fields:[serverId], references:[id], onDelete:Restrict)
+  reservations ResourceReservation[]
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  @@index([status, leaseUntil, id])
+  @@map("resource_operations")
+}
+model ResourceReservation {
+  id String @id @default(uuid()) @db.Uuid
+  orderId String @unique @map("order_id") @db.Uuid
+  operationId String? @map("operation_id") @db.Uuid
+  slotNumber Int @map("slot_number")
+  serverSlotId String? @map("server_slot_id") @db.Uuid
+  status String @default("HELD") @db.VarChar(16)
+  order Order @relation(fields:[orderId], references:[id], onDelete:Restrict)
+  operation ResourceOperation? @relation(fields:[operationId], references:[id], onDelete:Restrict)
+  serverSlot ServerSlot? @relation(fields:[serverSlotId], references:[id], onDelete:Restrict)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  @@index([operationId, status])
+  @@map("resource_reservations")
 }
