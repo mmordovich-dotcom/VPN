@@ -1,5 +1,5 @@
-# AXON · Shared VPS Platform · Stage 1.8
-Stage 1.7 и PR №8 опубликованы на существующем Render: Live/main d14b2ec3ad9e9fe61e631e746d3eb7cf6525b07a (проверено 06.11.2026). Stage 1.8 — технический аудит и исправления в отдельном PR, ещё не production. Fastify + Prisma/PostgreSQL + Vite/TypeScript; существующий @vpnaxon_bot и полный Mini App, обычный браузер — витрина. Только DEMO: списание 0 ₽, виртуальные серверы и demo identifiers.
+# AXON · Shared VPS Platform · Stage 1.9
+Stage 1.8 опубликован в DEMO: main/Render `a3476347d8c1b854177df4ef63d41e81a1042fa6`, пользовательская приёмка Telegram пройдена 07.11.2026. Stage 1.9 — платёжный журнал и безопасные mock-операции в отдельном PR; ещё не production. Fastify + Prisma/PostgreSQL + Vite/TypeScript; существующий @vpnaxon_bot и полный Mini App, обычный браузер — витрина. Только DEMO: списание 0 ₽, виртуальные серверы и demo identifiers.
 
 Fastify + Prisma/PostgreSQL + Vite/TypeScript monorepo. Существующий @vpnaxon_bot становится основным интерфейсом, Mini App сохраняет полный функционал, обычный браузер показывает информационную витрину. Все интерфейсы используют общую базу и бизнес-логику. Только демонстрация: списание 0 ₽, виртуальные серверы, демонстрационные идентификаторы вместо настоящих VPN-ключей.
 
@@ -30,3 +30,7 @@ Render Free может засыпать; inline tasks и доставка раб
 ## Stage 1.7 · Liquid Glass Mini App
 
 [Дизайн и границы Stage 1.7](docs/stage-1.7.md): новый mobile-first визуальный язык Mini App, floating dock, синие стеклянные поверхности, dark/light и доступные упрощённые эффекты. Обычный сайт остаётся витриной. Опубликовано в PR №7; исправление Telegram Web — PR №8. Визуальный стиль сохраняется в Stage 1.8.
+
+## Stage 1.9 · Payment & Infrastructure Foundation
+
+[Реализованный фундамент и ограничения](docs/stage-1.9.md), [будущие провайдеры](docs/providers-stage1.9.md), [отдельный контролируемый выпуск](docs/release-stage1.9.md). Только offline sandbox fixtures и DEMO; нет внешних HTTP-операций, реальных оплат или аренды. Добавочная миграция проверяется исключительно в изолированном CI, production не меняется. Дизайн и Telegram сохраняются.
