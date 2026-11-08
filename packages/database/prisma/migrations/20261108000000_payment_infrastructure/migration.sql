@@ -1,8 +1,8 @@
 -- Additive Stage 1.9 foundation. No existing row updates, enum changes or backfill.
 CREATE TABLE "payment_operations" (
 id UUID PRIMARY KEY,
-order_id UUID NOT NULL UNIQUE REFERENCES orders(id) ON DELETE RESTRICT,
-payment_id UUID NOT NULL UNIQUE REFERENCES payments(id) ON DELETE RESTRICT,
+order_id UUID NOT NULL UNIQUE REFERENCES orders(id) ON DELETE RESTRICT ON UPDATE CASCADE,
+payment_id UUID NOT NULL UNIQUE REFERENCES payments(id) ON DELETE RESTRICT ON UPDATE CASCADE,
 key VARCHAR(180) NOT NULL UNIQUE,
 provider VARCHAR(32) NOT NULL,
 mode VARCHAR(16) NOT NULL,
@@ -23,7 +23,7 @@ CHECK((provider='STARS_TEST' AND currency='XTR') OR (provider<>'STARS_TEST' AND 
 
 CREATE TABLE "payment_events" (
 id UUID PRIMARY KEY,
-operation_id UUID NOT NULL REFERENCES payment_operations(id) ON DELETE RESTRICT,
+operation_id UUID NOT NULL REFERENCES payment_operations(id) ON DELETE RESTRICT ON UPDATE CASCADE,
 event_id VARCHAR(180) NOT NULL,
 digest VARCHAR(64) NOT NULL,
 kind VARCHAR(16) NOT NULL,
@@ -36,7 +36,7 @@ CHECK(amount>=0 AND currency IN ('RUB','XTR'))
 );
 
 CREATE TABLE "payment_event_processing" (
-event_id UUID PRIMARY KEY REFERENCES payment_events(id) ON DELETE RESTRICT,
+event_id UUID PRIMARY KEY REFERENCES payment_events(id) ON DELETE RESTRICT ON UPDATE CASCADE,
 status VARCHAR(16) NOT NULL DEFAULT 'PENDING',
 last_error VARCHAR(64),
 updated_at TIMESTAMPTZ(3) NOT NULL,
@@ -45,8 +45,8 @@ CHECK(status IN ('PENDING','APPLIED','IGNORED','REJECTED'))
 
 CREATE TABLE "financial_entries" (
 id UUID PRIMARY KEY,
-operation_id UUID NOT NULL REFERENCES payment_operations(id) ON DELETE RESTRICT,
-event_id UUID NOT NULL REFERENCES payment_events(id) ON DELETE RESTRICT,
+operation_id UUID NOT NULL REFERENCES payment_operations(id) ON DELETE RESTRICT ON UPDATE CASCADE,
+event_id UUID NOT NULL REFERENCES payment_events(id) ON DELETE RESTRICT ON UPDATE CASCADE,
 key VARCHAR(200) NOT NULL UNIQUE,
 kind VARCHAR(16) NOT NULL,
 amount INTEGER NOT NULL,
@@ -65,7 +65,7 @@ status VARCHAR(16) NOT NULL DEFAULT 'PENDING',
 capacity INTEGER NOT NULL,
 monthly_cost INTEGER NOT NULL,
 currency CHAR(3) NOT NULL DEFAULT 'RUB',
-server_id UUID UNIQUE REFERENCES servers(id) ON DELETE RESTRICT,
+server_id UUID UNIQUE REFERENCES servers(id) ON DELETE RESTRICT ON UPDATE CASCADE,
 external_id VARCHAR(180),
 lease_token UUID,
 lease_until TIMESTAMPTZ(3),
@@ -81,10 +81,10 @@ CHECK(status<>'SUCCEEDED' OR (external_id IS NOT NULL AND server_id IS NOT NULL)
 
 CREATE TABLE "resource_reservations" (
 id UUID PRIMARY KEY,
-order_id UUID NOT NULL UNIQUE REFERENCES orders(id) ON DELETE RESTRICT,
-operation_id UUID REFERENCES resource_operations(id) ON DELETE RESTRICT,
+order_id UUID NOT NULL UNIQUE REFERENCES orders(id) ON DELETE RESTRICT ON UPDATE CASCADE,
+operation_id UUID REFERENCES resource_operations(id) ON DELETE RESTRICT ON UPDATE CASCADE,
 slot_number INTEGER NOT NULL CHECK(slot_number BETWEEN 1 AND 3),
-server_slot_id UUID REFERENCES server_slots(id) ON DELETE RESTRICT,
+server_slot_id UUID REFERENCES server_slots(id) ON DELETE RESTRICT ON UPDATE CASCADE,
 status VARCHAR(16) NOT NULL DEFAULT 'HELD',
 created_at TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 updated_at TIMESTAMPTZ(3) NOT NULL,
