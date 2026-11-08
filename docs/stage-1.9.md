@@ -36,7 +36,7 @@ MockSbpProvider и EXTERNAL_TEST работают без HTTP, SDK и аккау
 
 20261108000000_payment_infrastructure — шесть новых таблиц, индексы/append-only triggers и расширение CHECK списка job kinds. Нет ALTER существующих бизнес-полей, UPDATE, DELETE, backfill, enum change или изменения pricing/capacity. Применять сначала только в disposable CI PostgreSQL. Тест migration preservation разворачивает пять старых миграций, создаёт данные Stage 1.8, применяет шестую и сравнивает все снимки. Production Neon не используется тестами.
 
-Автоматические проверки и окончательные CI-ссылки будут внесены после фактического прогона. Полный сценарий содержится в payment-infrastructure.integration.test.ts: заказ → подписанный SBP mock event → durable inbox → queue → резерв → mock preparation → ACTIVE subscription/demo credential → mock notification. Дополнительно покрываются дубли, отказ/отмена, возврат до/после capture, rollback, restart, UNKNOWN, lease fencing, конкуренция, бюджет и отдельное истечение клиента. Уведомления проверяются перехваченным transport, не настоящим Telegram.
+Контрольный прогон реализации `f747a750869a11548b35b7a77579204c1dd99161`: 141 unit + 139 PostgreSQL integration + 26 browser = 306 разных тестов. PostgreSQL 16.13 и 18 прошли; окончательный статус двух версий базы и финального документирующего коммита проверяется в [Checks PR №10](https://github.com/mmordovich-dotcom/VPN/pull/10/checks). [Foundation PR](https://github.com/mmordovich-dotcom/VPN/actions/runs/42499863442), [browser](https://github.com/mmordovich-dotcom/VPN/actions/runs/42499863530). Сборка, TypeScript, Prisma validation, cloud validation и browser artifact verification успешны. Итоговый SHA и окончательные CI-ссылки указаны в описании PR после завершающего прогона. Полный сценарий содержится в payment-infrastructure.integration.test.ts: заказ → подписанный SBP mock event → durable inbox → queue → резерв → mock preparation → ACTIVE subscription/demo credential → mock notification. Дополнительно покрываются дубли, отказ/отмена, возврат до/после capture, rollback, restart, UNKNOWN, lease fencing, конкуренция, бюджет и отдельное истечение клиента. Уведомления проверяются перехваченным transport, не настоящим Telegram.
 
 ## Готовность Stage 2.0
 
@@ -45,3 +45,11 @@ MockSbpProvider и EXTERNAL_TEST работают без HTTP, SDK и аккау
 ## Совместимость PostgreSQL 18
 
 CI дополнен matrix PostgreSQL 16.13 и 18. В PostgreSQL 18 прежний RESTRICT FK возвращает SQLSTATE 23001; Prisma 6.19.3 оставляет его PrismaClientUnknownRequestError вместо P2003. Три старых теста сохранности уточнены: допускают P2003 либо конкретный 23001 + subscriptions_server_slot_id_fkey, проверяют сохранность строки. Сама FK/бизнес-логика не менялась; произвольная ошибка не считается успехом проверки.
+
+## Демонстрация и границы доказательств
+
+Первый сквозной PostgreSQL test печатает AXON_STAGE19_E2E с фактически прочитанными статусами order/payment/event/resource/reservation/subscription, captured amount и числом перехваченных уведомлений. Полный путь проверяется с глобальным fetch, который бросает ошибку при любом внешнем HTTP; externalHttpCalls должен оставаться 0. Все UUID/суммы в этом тесте — fixtures из одноразовой CI-базы. DB outage моделируется отказом одной транзакции через отдельный facade, не настоящим отключением production PostgreSQL; timeout/accepted-result/lease loss также инъецируются в mock. Это не подтверждает доступность реальных vendor API.
+
+В ходе подготовки CI выявил и помог исправить тип идентификатора fixture, различие SQLSTATE RESTRICT в PG18 и изоляцию подмены Prisma в аварийном тесте. Падающие прогоны не засчитываются как успешная проверка. Существующие 266 тестов сохранены; добавлены 14 unit и 26 integration. Браузерная авторизация и Telegram SDK имитируются в CI; настоящая приёмка Stage 1.9 через Telegram возможна только после отдельно разрешённого будущего выпуска.
+
+Production проверен read-only: /health и /ready 200, Stage 1.8/0.8.0, demo=true; basic 17000 minor RUB/30 дней. Main/Render/production Neon не изменены, миграция production не выполнялась. Пользовательский SWE-PROMO не затрагивался.
