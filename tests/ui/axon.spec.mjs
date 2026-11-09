@@ -234,3 +234,13 @@ test('Liquid loading and failure states remain honest and recoverable',async({pa
 test('Liquid empty dashboard offers the catalog without pretending access is active',async({page})=>{
  await page.setViewportSize({width:390,height:844});const f=await fixtures(page,{mini:true,landing:true,empty:true});await ready(page);await expect(page.getByRole('heading',{name:'Ваш первый шаг.'})).toBeVisible();await expect(page.getByRole('link',{name:'Выбрать тариф',exact:false})).toBeVisible();await expect(page.locator('.dashboard-time')).toHaveCount(0);await noOverflow(page);await page.screenshot({path:'ui-results/liquid-empty.png',animations:'disabled'});expect(f.errors).toEqual([]);
 });
+
+test('Stage 2.0 legal information stays public while drafts and sales stay unavailable',async({page})=>{
+ const result=await fixtures(page,{logged:false});await page.goto('http://127.0.0.1:4173/');await page.getByRole('link',{name:'Правовая информация',exact:true}).click();await expect(page.getByRole('heading',{name:'Правовая информация',exact:true})).toBeVisible();await expect(page.getByText('Коммерческие документы готовятся',{exact:true})).toBeVisible();await expect(page.locator('#page')).toContainText('Списание 0 ₽');await expect(page.locator('#page a[href*="document="]')).toHaveCount(0);await expect(page.getByRole('button',{name:/Принять|Оплатить/})).toHaveCount(0);expect(result.errors).toEqual([]);await page.screenshot({path:'ui-results/stage20-legal-public.png',fullPage:true});
+});
+test('Stage 2.0 direct draft route cannot publish an offer',async({page})=>{
+ await fixtures(page,{logged:false});await page.goto('http://127.0.0.1:4173/#/legal?document=offer');await expect(page.getByRole('heading',{name:'Документ пока не опубликован'})).toBeVisible();await page.getByRole('link',{name:'Вся правовая информация'}).click();await expect(page.getByRole('heading',{name:'Коммерческие документы готовятся'})).toBeVisible();
+});
+test('Stage 2.0 Mini App profile legal link preserves navigation and DEMO catalog',async({page})=>{
+ await page.setViewportSize({width:390,height:844});const result=await fixtures(page,{mini:true});await page.goto('http://127.0.0.1:4173/#/profile');await page.locator('#page a[href="#/legal"]').click();await expect(page.getByRole('heading',{name:'Правовая информация',exact:true})).toBeVisible();await page.locator('.bottom-nav a[href="#/catalog"]').click();await expect(page.locator('#page')).toContainText('170');expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);expect(result.errors).toEqual([]);await page.screenshot({path:'ui-results/stage20-mini-legal-catalog.png',fullPage:true});
+});

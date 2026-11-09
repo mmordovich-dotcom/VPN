@@ -1,13 +1,19 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
+export type SandboxVendor = 'STARS_SANDBOX'|'ROLLYPAY_SANDBOX'|'CLOUDPAYMENTS_SANDBOX';
 export type TestProvider = 'STARS_TEST' | 'SBP_MOCK' | 'EXTERNAL_TEST';
 export type PaymentState = 'PENDING' | 'UNKNOWN' | 'SUCCEEDED' | 'FAILED' | 'CANCELLED' | 'REFUNDED';
-export interface PaymentObservation { operationId: string; eventId: string; externalId: string; amount: number; currency: 'RUB' | 'XTR'; state: PaymentState; mode: 'SANDBOX'; provider: TestProvider }
+export interface PaymentObservation { operationId: string; eventId: string; externalId: string; amount: number; currency: 'RUB' | 'XTR'; state: PaymentState; mode: 'SANDBOX'; provider: TestProvider|SandboxVendor }
 /** Internal normalized contract, not an assertion about a vendor HTTP API. */
 export interface PaymentProvider { readonly mode: 'SANDBOX' | 'LIVE'; readonly name: string; verify(raw: string, authentication: string): Promise<PaymentObservation>; observe(operationKey: string): Promise<PaymentObservation | null> }
 export interface ExternalPaymentProvider extends PaymentProvider { readonly contractVerified: boolean }
-export interface RollyPayAdapterContract extends ExternalPaymentProvider { readonly name: 'ROLLYPAY'; readonly contractVerified: false }
+export interface RollyPayAdapterContract extends ExternalPaymentProvider { readonly name: 'ROLLYPAY'; readonly contractVerified: boolean }
 export interface CloudPaymentsAdapterContract extends ExternalPaymentProvider { readonly name: 'CLOUDPAYMENTS'; readonly contractVerified: false }
 export interface YooKassaAdapterContract extends ExternalPaymentProvider { readonly name: 'YOOKASSA'; readonly contractVerified: false }
+/** Only server-side adapters may call this after signature AND source validation. */
+export function verifiedSandboxObservation(value:PaymentObservation):PaymentObservation {
+ if(!['STARS_SANDBOX','ROLLYPAY_SANDBOX','CLOUDPAYMENTS_SANDBOX'].includes(value.provider)||value.mode!=='SANDBOX'||!Number.isSafeInteger(value.amount)||value.amount<=0)throw new Error('UNVERIFIED_PAYMENT_EVENT');
+ const result=Object.freeze({...value});trusted.add(result);return result;
+}
 const states = ['PENDING','UNKNOWN','SUCCEEDED','FAILED','CANCELLED','REFUNDED'];
 const trusted = new WeakSet<object>();
 export function assertTestObservation(value: PaymentObservation) { if (!trusted.has(value)) throw new Error('UNVERIFIED_PAYMENT_EVENT'); }

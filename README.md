@@ -1,5 +1,5 @@
-# AXON · Shared VPS Platform · Stage 1.9
-Stage 1.8 опубликован в DEMO: main/Render `a3476347d8c1b854177df4ef63d41e81a1042fa6`, пользовательская приёмка Telegram пройдена 07.11.2026. Stage 1.9 — платёжный журнал и безопасные mock-операции в отдельном PR; ещё не production. Fastify + Prisma/PostgreSQL + Vite/TypeScript; существующий @vpnaxon_bot и полный Mini App, обычный браузер — витрина. Только DEMO: списание 0 ₽, виртуальные серверы и demo identifiers.
+# AXON · Shared VPS Platform · Stage 2.0
+Stage 1.9 опубликован и принят владельцем: main/Render 8ae4832ec8dc1c88234c8b4c049df82ee22ca715. Stage 2.0 готовится отдельным PR: sandbox API-адаптеры, надёжные операции, юридические черновики и безопасная подготовка мониторинга. Только DEMO, списание 0 ₽. Production не обновляется этим PR; LIVE-платежи и Aeza заблокированы.
 
 Fastify + Prisma/PostgreSQL + Vite/TypeScript monorepo. Существующий @vpnaxon_bot становится основным интерфейсом, Mini App сохраняет полный функционал, обычный браузер показывает информационную витрину. Все интерфейсы используют общую базу и бизнес-логику. Только демонстрация: списание 0 ₽, виртуальные серверы, демонстрационные идентификаторы вместо настоящих VPN-ключей.
 
@@ -34,3 +34,7 @@ Render Free может засыпать; inline tasks и доставка раб
 ## Stage 1.9 · Payment & Infrastructure Foundation
 
 [Реализованный фундамент и ограничения](docs/stage-1.9.md), [будущие провайдеры](docs/providers-stage1.9.md), [отдельный контролируемый выпуск](docs/release-stage1.9.md). Только offline sandbox fixtures и DEMO; нет внешних HTTP-операций, реальных оплат или аренды. Добавочная миграция проверяется исключительно в изолированном CI, production не меняется. Дизайн и Telegram сохраняются.
+
+## Stage 2.0 · Final integrations
+
+[Реализация и ограничения](docs/stage-2.0.md), [подключение провайдеров](docs/providers-stage2.0.md), [юридический пакет](docs/legal/README.md), [мониторинг](docs/monitoring-stage2.0.md), [эксплуатационные условия](docs/operations-stage2.0.md), [будущий DEMO-выпуск](docs/release-stage2.0.md). Тексты DRAFT не являются действующей офертой. Внешние sandbox/paid ресурсы и мониторинг без разрешения не включаются.

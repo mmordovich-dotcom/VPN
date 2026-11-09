@@ -18,6 +18,7 @@ const baseSchema = z.object({
 const databaseSchema = baseSchema.extend({ DATABASE_URL: dbUrl });
 const apiSchema = databaseSchema.extend({
   PUBLIC_ORIGIN: origin.optional(),
+  INTERNAL_MONITOR_TOKEN: z.string().regex(/^[A-Za-z0-9_-]{32,256}$/).optional(),
   BACKGROUND_MODE: z.enum(['inline', 'external']).default('inline'),
   TELEGRAM_BOT_TOKEN: z.string().trim().default(''),
   TELEGRAM_WEBHOOK_SECRET: z.string().regex(/^[A-Za-z0-9_-]{32,256}$/).optional(),
