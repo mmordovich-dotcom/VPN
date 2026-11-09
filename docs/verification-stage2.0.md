@@ -1,15 +1,15 @@
 # Stage 2.0 · проверяемые результаты
 
 ## Контрольная точка CI
-Код 388cb8a932508508c2b9090090d038604417a08d прошёл полный набор проверок 09.11.2026:
-- [Verify foundation](https://github.com/mmordovich-dotcom/VPN/actions/runs/42618700107): PostgreSQL 16.13 и 18, оба job success.
-- [Browser](https://github.com/mmordovich-dotcom/VPN/actions/runs/42618700111): success, 29/29.
-- 169 unit + 158 PostgreSQL integration + 29 browser = 356 различных тестов; unit/integration дополнительно повторены на двух версиях PostgreSQL.
+Код 75e202e71165a4ca0befc1a6b8ebc9a738da3e1e прошёл полный набор проверок 09.11.2026:
+- [Verify foundation](https://github.com/mmordovich-dotcom/VPN/actions/runs/42641973553): PostgreSQL 16.13 и 18, оба job success.
+- [Browser](https://github.com/mmordovich-dotcom/VPN/actions/runs/42641973959): success, 29/29.
+- 169 unit + 159 PostgreSQL integration + 29 browser = 357 различных тестов; unit/integration дополнительно повторены на двух версиях PostgreSQL.
 - build, typecheck, Prisma validate, cloud validate, production web build и browser artifact verification прошли.
 - Миграция на заполненной Stage 1.9 в изолированной БД: 16 таблиц сохранены точно, цены 170 ₽ и вместимость 3 без изменений.
 - pg_dump → отдельная БД → pg_restore: 14 таблиц совпали, восстановленная очередь/журнал не выдали вторую подписку.
 
-Последняя небольшая стабилизация дополнительно отделяет заведомо неподдерживаемый Rolly sandbox refund от UNKNOWN и добавляет тест гонки двух worker при create. Ожидаемый итог — 169 unit + 159 integration + 29 browser = 357. Это ожидание НЕ доказательство: окончательный head SHA и фактические успешные CI фиксируются в описании [PR №11](https://github.com/mmordovich-dotcom/VPN/pull/11), [текущие Checks](https://github.com/mmordovich-dotcom/VPN/pull/11/checks). До их успеха PR остаётся Draft. Документация не заменяет проверку последнего SHA.
+Проверенный набор включает защиту от гонки двух worker при create и явный отказ Rolly sandbox refund до исходящего запроса. Итог: 169 unit + 159 integration + 29 browser = 357. Финальная фиксация обновляет только документы; точный итоговый head SHA и повторные успешные CI записаны в описании [PR №11](https://github.com/mmordovich-dotcom/VPN/pull/11), [текущие Checks](https://github.com/mmordovich-dotcom/VPN/pull/11/checks). До зелёных проверок последнего SHA PR остаётся Draft. Число PostgreSQL прогонов не прибавляется к числу различных тестов.
 
 ## Явные доказательства из CI
 AXON_STAGE20_CONTRACT_E2E: externalSandbox=false, transport=OFFLINE_FIXTURE, mode=SANDBOX, captureCount=1, refundCount=1, realResources=0.
@@ -28,7 +28,7 @@ AXON_STAGE20_RESTORE_DRILL: isolated=true, realUserData=false, tables=14, exactF
 ## Реальные проверки и непроверенные части
 Production baseline 09.11.2026: браузер показал /health Stage 1.9 DEMO, /ready database available, /api/v1/auth/config loginEnabled=true/publicWebMode=landing. Прямой транспорт инструмента ранее завершился timeout, поэтому результат не выдан за измерение uptime; браузер ответил штатно. Production не менялся.
 Вход UptimeRobot: dashboard.uptimerobot.com/login требует email/авторизации. Мониторы PAUSED только в подготовленном плане; во внешнем аккаунте ничего не создано, alerts/status page не включены. Адрес оповещений не согласован, внешние down/up доставки не проверены.
-Официальные provider sandbox транзакции НЕ ВЫПОЛНЕНЫ: нет отдельно разрешённых аккаунтов, test bot/token, merchant secrets и test HTTPS endpoint. Контрактные fixtures не подменяют этот пробел. Rolly sandbox не поддерживает refund; частичные возвраты, LIVE, финансовые settlement/фискальные требования и текущий Aeza API/control plane остаются блокерами. Нет реальной покупки/выдачи VPS/VPN, независимого production backup или restore.
+Владелец подтвердил 09.11.2026: тестового доступа RollyPay/CloudPayments пока нет. Официальные provider sandbox транзакции НЕ ВЫПОЛНЕНЫ: не предоставлен доступ к отдельно разрешённым test-аккаунтам, test bot/token, merchant secrets и test HTTPS endpoint. Контрактные fixtures не подменяют этот пробел. Rolly sandbox не поддерживает refund; частичные возвраты, LIVE, финансовые settlement/фискальные требования и текущий Aeza API/control plane остаются блокерами. Нет реальной покупки/выдачи VPS/VPN, независимого production backup или restore.
 Юридические тексты — 6 черновиков, не заключение юриста. Продавец/юрисдикция/адрес/налоговые реквизиты/контакты/сроки хранения/дата действия не заполнены; применимость норм РФ/СНГ и иностранной инфраструктуры требует проверки.
 
 ## Сохранность и выпуск

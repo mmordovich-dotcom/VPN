@@ -14,7 +14,7 @@
 
 ## Реальная проверка и пределы
 Production baseline 09.11.2026: браузер показал health Stage 1.9 DEMO, ready database available, auth config loginEnabled true/publicWebMode landing. Некоторые прямые HTTP-проверки из среды инструмента завершились таймаутом; это не объявляется падением сайта, браузерная проверка успешна. Production Neon/Render/bot не изменялись.
-CI и browser результат последнего коммита фиксируется в verification-stage2.0.md. Provider contract fixtures — локальные детерминированные HTTP-ответы внутри облачного CI, НЕ настоящий sandbox провайдера. Внешние sandbox: НЕ ПРОВЕРЕНЫ (нет отдельно разрешённых аккаунтов/секретов/test endpoint). Реальные VPS/VPN, фискальные чеки/договора, LIVE, independent production backup/restore и доставленные UptimeRobot alerts НЕ ГОТОВЫ.
+CI и browser результат последнего коммита фиксируется в verification-stage2.0.md. Provider contract fixtures — локальные детерминированные HTTP-ответы внутри облачного CI, НЕ настоящий sandbox провайдера. Внешние sandbox: НЕ ПРОВЕРЕНЫ (доступ к отдельно разрешённым аккаунтам/секретам/test endpoint не предоставлен). Реальные VPS/VPN, фискальные чеки/договора, LIVE, independent production backup/restore и доставленные UptimeRobot alerts НЕ ГОТОВЫ.
 
 ## Сохранено
 Liquid Glass CSS, изображения, Premium-эмодзи, навигация основных разделов, auth/cookies, Mini App-покупки/продления, уведомления/очередь, бизнес-модель 170 ₽/30 дней и 3 клиента/VPS. Новый законный website checkout не включается через скрытый query flag; обычный Chrome по-прежнему витрина. Код старого DEMO не заменяется новыми внешними адаптерами.
