@@ -44,7 +44,7 @@ export class IntegrationService {
    await locked(this.db,async tx=>{
     const lease=await tx.providerAttempt.findFirst({where:{id:attempt.id,status:'RUNNING',leaseToken:token}});if(!lease)fail(409,'PROVIDER_LEASE_LOST');
     if(checkout){const op=await tx.paymentOperation.findUniqueOrThrow({where:{id}});if(op.externalId.startsWith('pending:'))await tx.paymentOperation.update({where:{id},data:{externalId:checkout.externalId}});else if(op.externalId!==checkout.externalId&&!['STARS_SANDBOX','CLOUDPAYMENTS_SANDBOX'].includes(op.provider))fail(409,'PAYMENT_SOURCE_MISMATCH');}
-    await tx.providerAttempt.update({where:{id:attempt.id},data:{status:'SUCCEEDED',checkoutUrl:checkout?.url,leaseToken:null,leaseUntil:null,lastError:null}});
+    await tx.providerAttempt.update({where:{id:attempt.id},data:{status:'SUCCEEDED',checkoutUrl:checkout?.url??null,leaseToken:null,leaseUntil:null,lastError:null}});
    });
    // A successful refund REQUEST is not yet financial evidence. Wait for callback/reconciliation.
    return {status:'SUCCEEDED',url:checkout?.url??null};

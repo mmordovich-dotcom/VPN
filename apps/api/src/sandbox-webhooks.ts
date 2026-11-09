@@ -9,7 +9,7 @@ export async function sandboxWebhooks(app:FastifyInstance,db:PrismaClient,adapte
  if(isolation!=='INDEPENDENT_TEST_ENVIRONMENT'||process.env.NODE_ENV==='production')throw new Error('SANDBOX_ISOLATION_REQUIRED');
  const service=new IntegrationService(db,adapter,legal);
  await app.register(async scope=>{
-  scope.setErrorHandler((error,_req,reply)=>{const status=/UNTRUSTED|SOURCE_MISMATCH|ENVIRONMENT_MISMATCH/.test(error.message)?403:503;return reply.code(status).send({error:status===403?'UNTRUSTED_PROVIDER_EVENT':'SANDBOX_EVENT_UNAVAILABLE'});});
+  scope.setErrorHandler((error,_req,reply)=>{const status=/UNTRUSTED|SOURCE_MISMATCH|ENVIRONMENT_MISMATCH/.test(error instanceof Error?error.message:'')?403:503;return reply.code(status).send({error:status===403?'UNTRUSTED_PROVIDER_EVENT':'SANDBOX_EVENT_UNAVAILABLE'});});
   scope.removeContentTypeParser('application/json');
   scope.addContentTypeParser(['application/json','application/x-www-form-urlencoded'],{parseAs:'string',bodyLimit:32768},(_req,body,done)=>done(null,String(body)));
   scope.post<{Params:{kind:string};Body:string}>('/sandbox/webhooks/:kind',async(req,reply)=>{

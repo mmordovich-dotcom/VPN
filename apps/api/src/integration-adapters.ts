@@ -2,7 +2,7 @@ import { createHmac, timingSafeEqual, randomUUID, createHash } from 'node:crypto
 import type { PaymentState } from './payment-provider.js';
 export type Vendor = 'STARS_SANDBOX'|'ROLLYPAY_SANDBOX'|'CLOUDPAYMENTS_SANDBOX';
 export type Channel = 'TELEGRAM'|'WEBSITE';
-export type Context = { id:string; orderId:string; amount:number; currency:'RUB'|'XTR'; externalId:string; state?:PaymentState; telegramId?:string };
+export type Context = { id:string; orderId:string; amount:number; currency:'RUB'|'XTR'; externalId:string; state?:PaymentState|undefined; telegramId?:string|undefined };
 export type Evidence = { externalId:string; state:PaymentState; amount:number; currency:'RUB'|'XTR'; eventId:string };
 export type Checkout = { externalId:string; url:string };
 export type Headers = Record<string,string|undefined>;
@@ -50,7 +50,7 @@ export class RollyPaySandbox implements SandboxAdapter {
   this.normalize(p,c,'create');return {externalId:str(p.payment_id),url:url(p.pay_url,'pay.rollypay.io','/pay/')};
  }
  async observe(c:Context){if(c.externalId.startsWith('pending:'))return null;const p=await this.api('/payments/'+encodeURIComponent(c.externalId),null,'GET');return this.normalize(p,c,'poll:'+createHash('sha256').update(JSON.stringify(p)).digest('hex'));}
- async verify(raw:string,h:Headers,c:Context){
+ async verify(raw:string,h:Headers,c:Context):Promise<Evidence>{
   const t=h['x-timestamp']??'',sig=h['x-signature']??'';
   if(!/^\d{10}$/.test(t)||Math.abs(this.now()/1000-Number(t))>300||!equal(sig,createHmac('sha256',this.signingSecret).update(t+'.'+raw).digest('hex')))throw new Error('UNTRUSTED_PROVIDER_EVENT');
   const p=json(raw);if(h['x-test-mode']!=='true')throw new Error('PAYMENT_ENVIRONMENT_MISMATCH');
@@ -64,7 +64,7 @@ export class RollyPaySandbox implements SandboxAdapter {
 export class CloudPaymentsSandbox implements SandboxAdapter {
  readonly name='CLOUDPAYMENTS_SANDBOX' as const;readonly currency='RUB' as const;
  constructor(private publicId:string,private secret:string,private http:Http=wire){if(!publicId.startsWith('test_api_')||secret.length<16)throw new Error('CLOUDPAYMENTS_TEST_TERMINAL_REQUIRED');}
- private api(endpoint:string,body:unknown,key=randomUUID()){return request(this.http,'https://api.cloudpayments.ru'+endpoint,body,{Authorization:'Basic '+Buffer.from(this.publicId+':'+this.secret).toString('base64'),'X-Request-ID':key});}
+ private api(endpoint:string,body:unknown,key:string=randomUUID()){return request(this.http,'https://api.cloudpayments.ru'+endpoint,body,{Authorization:'Basic '+Buffer.from(this.publicId+':'+this.secret).toString('base64'),'X-Request-ID':key});}
  async create(c:Context,key:string){const p=await this.api('/orders/create',{Amount:c.amount/100,Currency:'RUB',Description:'AXON sandbox · 30 days',InvoiceId:c.orderId,RequireConfirmation:false,SendEmail:false,SendSms:false},key);if(p.Success!==true||!p.Model||typeof p.Model!=='object')throw new Error('PROVIDER_RESPONSE_INVALID');const m=p.Model as Record<string,unknown>;if(minor(m.Amount)!==c.amount||m.Currency!=='RUB')throw new Error('PAYMENT_SOURCE_MISMATCH');return {externalId:'invoice:'+str(m.Id),url:url(m.Url,'orders.cloudpayments.ru','/d/')};}
  async observe(c:Context):Promise<Evidence|null>{
   const p=await this.api('/v2/payments/find',{InvoiceId:c.orderId});if(p.Success===false)return null;
