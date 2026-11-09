@@ -8,7 +8,7 @@ export type Checkout = { externalId:string; url:string };
 export type Headers = Record<string,string|undefined>;
 export type Http = (url:string,init:RequestInit)=>Promise<Response>;
 export interface SandboxAdapter {
- readonly name:Vendor; readonly currency:'XTR'|'RUB';
+ readonly name:Vendor; readonly currency:'XTR'|'RUB'; readonly refundSupported?:boolean;
  create(c:Context,key:string):Promise<Checkout>;
  observe(c:Context):Promise<Evidence|null>;
  refund(c:Context,key:string):Promise<void>;
@@ -36,7 +36,7 @@ async function request(http:Http,u:string,body:unknown,headers:Record<string,str
 }
 /** Official RollyPay API, sandbox only; never reads a LIVE result into the ledger. */
 export class RollyPaySandbox implements SandboxAdapter {
- readonly name='ROLLYPAY_SANDBOX' as const;readonly currency='RUB' as const;
+ readonly name='ROLLYPAY_SANDBOX' as const;readonly currency='RUB' as const;readonly refundSupported=false;
  constructor(private key:string,private signingSecret:string,private http:Http=wire,private now=()=>Date.now()) {if(!key||signingSecret.length<32)throw new Error('PROVIDER_CREDENTIALS_REQUIRED');}
  private async api(endpoint:string,body:unknown,method='POST'){return request(this.http,'https://rollypay.io/api/v1'+endpoint,body,{'X-API-Key':this.key,'X-Nonce':randomUUID(),'X-Test-Mode':'true'},method);}
  private normalize(p:Record<string,unknown>,c:Context,eventId:string){

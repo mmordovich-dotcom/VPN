@@ -25,6 +25,7 @@ export class IntegrationService {
  async create(id:string){return this.outbound(id,'CREATE');}
  async refund(id:string){return this.outbound(id,'REFUND');}
  private async outbound(id:string,kind:'CREATE'|'REFUND'){
+  if(kind==='REFUND'&&this.adapter.refundSupported===false)fail(409,'SANDBOX_REFUNDS_UNSUPPORTED');
   const c=await this.context(id),token=randomUUID();
   if(kind==='CREATE'){const op=await this.db.paymentOperation.findUniqueOrThrow({where:{id},include:{order:true}});await this.legal.requireAccepted(op.order.userId,op.orderId,this.adapter.name==='STARS_SANDBOX'?'TELEGRAM':'WEBSITE');}
   const claim=await locked(this.db,async tx=>{
