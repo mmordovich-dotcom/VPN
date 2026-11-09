@@ -1,3 +1,4 @@
+import Fastify from 'fastify';
 import type { FastifyInstance } from 'fastify';
 import type { PrismaClient } from '@shared-vps/database';
 import { IntegrationService } from './integration-service.js';
@@ -41,3 +42,5 @@ export async function sandboxWebhooks(app:FastifyInstance,db:PrismaClient,adapte
  });
  return service;
 }
+
+export function createSandboxApp(){return Fastify();}
