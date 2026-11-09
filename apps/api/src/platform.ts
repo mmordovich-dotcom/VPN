@@ -1,3 +1,4 @@
+import { integrationRoutes } from './integration-routes.js';
 import { PUBLIC_WEB_MODE, RELEASE } from '@shared-vps/shared';
 import { publicOrder, publicSubscription } from './presenters.js';
 import { readinessRoutes } from './readiness-routes.js';
@@ -30,6 +31,7 @@ export async function platformRoutes(app: FastifyInstance, db: PrismaClient, con
   });
   reliabilityRoutes(app,db,auth,runtime,config);
   readinessRoutes(app,db,auth,engine);
+  integrationRoutes(app,db,auth);
   app.get('/api/v1/auth/config', async () => ({ botUsername: config.TELEGRAM_BOT_USERNAME ?? null, loginEnabled: botLogin.available(), loginMode: 'bot', publicWebMode:PUBLIC_WEB_MODE, ...RELEASE }));
   botLoginRoutes(app, botLogin);
   app.post<{ Body: { initData: string } }>('/api/v1/auth/telegram', { schema: { body: { type: 'object', additionalProperties: false, required: ['initData'], properties: { initData: { type: 'string', maxLength: 12000 } } } } }, async (req, reply) => auth.login(req, reply, req.body));

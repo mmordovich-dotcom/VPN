@@ -1,3 +1,4 @@
+import { monitoringRoutes } from './monitoring.js';
 import { randomUUID } from 'node:crypto';
 import { platformRoutes } from './platform.js';
 import { staticRoutes } from './static.js';
@@ -19,6 +20,7 @@ export async function buildApp(config: ApiConfig, injectedDb?: ApiDatabase) {
   await app.register(cors, { origin: config.CORS_ORIGINS, methods: ['GET', 'POST'], credentials: true, allowedHeaders: ['content-type', 'x-shared-vps'] });
   await app.register(async routes => { await healthRoutes(routes, db); });
   await app.register(async routes => { await systemRoutes(routes); await planRoutes(routes, db); }, { prefix: '/api/v1' });
+  monitoringRoutes(app,db,config.INTERNAL_MONITOR_TOKEN);
   const platform = await platformRoutes(app, db, config);
   await staticRoutes(app);
   app.decorate('automation', () => { platform.runtime.start(); return platform.run(); });

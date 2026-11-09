@@ -50,9 +50,10 @@ export class PaymentFoundation {
       if(op.amount!==event.amount||op.currency!==event.currency)return mark('REJECTED','AMOUNT_CURRENCY_MISMATCH');
       const capture=await tx.financialEntry.findUnique({where:{key:op.id+':CAPTURE'}});
       if(event.kind==='REFUNDED'&&!capture)return mark('PENDING','CAPTURE_REQUIRED');
-      if(event.kind===op.status || op.status==='REFUNDED' || ['FAILED','CANCELLED'].includes(op.status) || op.status==='SUCCEEDED'&&event.kind!=='REFUNDED')return mark('IGNORED');
+      const vendor=op.provider.endsWith('_SANDBOX');
+      if(event.kind===op.status || op.status==='REFUNDED' || !vendor&&['FAILED','CANCELLED'].includes(op.status) || op.status==='SUCCEEDED'&&event.kind!=='REFUNDED')return mark('IGNORED');
       const action=event.kind==='SUCCEEDED'?'confirm':event.kind==='REFUNDED'?'refund':event.kind==='FAILED'?'fail':event.kind==='CANCELLED'?'cancel':null;
-      if(action)await this.engine.applyPaymentIn(tx,op.order.userId,op.orderId,action,true,true);
+      if(action&&!(vendor&&['fail','cancel'].includes(action)))await this.engine.applyPaymentIn(tx,op.order.userId,op.orderId,action,true,true);
       await tx.paymentOperation.update({where:{id:op.id},data:{status:event.kind}});
       const kind=event.kind==='SUCCEEDED'?'CAPTURE':event.kind==='REFUNDED'?'REFUND':'STATE';
       await tx.financialEntry.create({data:{operationId:op.id,eventId:event.id,key:op.id+':'+(kind==='STATE'?event.id:kind),kind,amount:event.amount,currency:event.currency}});
@@ -78,7 +79,7 @@ export class PaymentFoundation {
     const captured=captures.reduce((s,e)=>s+e.amount,0),refunded=refunds.reduce((s,e)=>s+e.amount,0);
     const evidenceValid=op.ledger.every(e=>e.amount===op.amount&&e.currency===op.currency)&&captures.length<=1&&refunds.length<=captures.length;
     const totalsValid=op.status==='SUCCEEDED'?captures.length===1&&captured===op.amount&&refunded===0:op.status==='REFUNDED'?captures.length===1&&refunds.length===1&&captured===op.amount&&refunded===op.amount:captured===0&&refunded===0;
-    const stateValid=op.status==='SUCCEEDED'?op.payment.status==='SUCCEEDED'&&['PAID','PROCESSING','COMPLETED'].includes(op.order.status):op.status==='REFUNDED'?op.payment.status==='REFUNDED'&&op.order.status==='CANCELLED':['FAILED','CANCELLED'].includes(op.status)?op.payment.status==='FAILED':op.payment.status==='PENDING';
+    const stateValid=op.status==='SUCCEEDED'?op.payment.status==='SUCCEEDED'&&['PAID','PROCESSING','COMPLETED'].includes(op.order.status):op.status==='REFUNDED'?op.payment.status==='REFUNDED'&&op.order.status==='CANCELLED':['FAILED','CANCELLED'].includes(op.status)?(op.provider.endsWith('_SANDBOX')?op.payment.status==='PENDING':op.payment.status==='FAILED'):op.payment.status==='PENDING';
     return {operationId:op.id,status:op.status,captured,refunded,currency:op.currency,consistent:evidenceValid&&totalsValid&&stateValid&&op.payment.orderId===op.orderId&&op.payment.amount===op.order.amount&&op.payment.currency===op.order.currency};
   }
 }

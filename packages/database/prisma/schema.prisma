@@ -86,6 +86,7 @@ model User {
   orders        Order[]
   subscriptions Subscription[]
   auditLogs     AuditLog[]
+  legalAcceptances LegalAcceptance[]
   sessions Session[]
   tickets SupportTicket[]
   supportMessages SupportMessage[]
@@ -133,6 +134,7 @@ model Plan {
 }
 
 model Order {
+  legalAcceptances LegalAcceptance[]
   backgroundJobs BackgroundJob[]
   operationKey String? @unique @map("operation_key") @db.VarChar(160)
   renewalId String? @map("renewal_id") @db.Uuid
@@ -534,6 +536,7 @@ model SubscriptionCompensation {
 
 // Stage 1.9: internal test-only foundation. No LIVE values or credentials.
 model PaymentOperation {
+  attempts ProviderAttempt[]
   id String @id @default(uuid()) @db.Uuid
   orderId String @unique @map("order_id") @db.Uuid
   paymentId String @unique @map("payment_id") @db.Uuid
@@ -628,4 +631,37 @@ model ResourceReservation {
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
   @@index([operationId, status])
   @@map("resource_reservations")
+}
+
+model ProviderAttempt {
+ id String @id @default(uuid()) @db.Uuid
+ operationId String @map("operation_id") @db.Uuid
+ operation PaymentOperation @relation(fields:[operationId], references:[id], onDelete:Restrict)
+ kind String @db.VarChar(16)
+ key String @unique @db.VarChar(180)
+ status String @default("PENDING") @db.VarChar(16)
+ leaseToken String? @map("lease_token") @db.Uuid
+ leaseUntil DateTime? @map("lease_until") @db.Timestamptz(3)
+ checkoutUrl String? @map("checkout_url") @db.VarChar(1024)
+ lastError String? @map("last_error") @db.VarChar(64)
+ createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+ updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+ @@unique([operationId,kind])
+ @@index([status,updatedAt,id])
+ @@map("provider_attempts")
+}
+model LegalAcceptance {
+ id String @id @default(uuid()) @db.Uuid
+ userId String @map("user_id") @db.Uuid
+ user User @relation(fields:[userId],references:[id],onDelete:Restrict)
+ orderId String @map("order_id") @db.Uuid
+ order Order @relation(fields:[orderId],references:[id],onDelete:Restrict)
+ documentId String @map("document_id") @db.VarChar(32)
+ version String @db.VarChar(32)
+ digest String @db.Char(64)
+ channel String @db.VarChar(16)
+ acceptedAt DateTime @default(now()) @map("accepted_at") @db.Timestamptz(3)
+ @@unique([orderId,documentId])
+ @@index([userId,acceptedAt])
+ @@map("legal_acceptances")
 }
