@@ -26,6 +26,7 @@ export class IntegrationService {
  async refund(id:string){return this.outbound(id,'REFUND');}
  private async outbound(id:string,kind:'CREATE'|'REFUND'){
   const c=await this.context(id),token=randomUUID();
+  if(kind==='CREATE'){const op=await this.db.paymentOperation.findUniqueOrThrow({where:{id},include:{order:true}});await this.legal.requireAccepted(op.order.userId,op.orderId,this.adapter.name==='STARS_SANDBOX'?'TELEGRAM':'WEBSITE');}
   const claim=await locked(this.db,async tx=>{
    const op=await tx.paymentOperation.findUniqueOrThrow({where:{id},include:{order:true}});
    if(kind==='CREATE'&&(op.status!=='PENDING'||op.order.status!=='AWAITING_PAYMENT'))fail(409,'PAYMENT_ALREADY_STARTED');
@@ -67,7 +68,7 @@ export class IntegrationService {
   const current=this.adapter.name==='ROLLYPAY_SANDBOX'?await this.adapter.observe({...c,externalId:e.externalId}):e;
   if(!current)fail(503,'PROVIDER_RECONCILIATION_REQUIRED');return this.record(c,current);
  }
- async reconcile(id:string){for(let i=0;i<(this.adapter.name==='STARS_SANDBOX'?2:1);i++){const c=await this.context(id),e=await this.adapter.observe(c);if(!e)break;await this.record(c,e);}return this.payments.audit(id);}
+ async reconcile(id:string){for(let i=0;i<(this.adapter.name==='ROLLYPAY_SANDBOX'?1:2);i++){const c=await this.context(id),e=await this.adapter.observe(c);if(!e)break;await this.record(c,e);}return this.payments.audit(id);}
  /** Bounded recovery after a crash. Never blindly retries an outbound request. */
  async recover(cursor?:string){
   const rows=await this.db.providerAttempt.findMany({where:{status:{in:['RUNNING','UNKNOWN']},...(cursor?{id:{gt:cursor}}:{})},orderBy:{id:'asc'},take:50});

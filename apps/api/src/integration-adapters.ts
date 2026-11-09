@@ -70,7 +70,16 @@ export class CloudPaymentsSandbox implements SandboxAdapter {
   const p=await this.api('/v2/payments/find',{InvoiceId:c.orderId});if(p.Success===false)return null;
   if(p.Success!==true||!p.Model||typeof p.Model!=='object')throw new Error('PROVIDER_RESPONSE_INVALID');const m=p.Model as Record<string,unknown>;
   if(m.TestMode!==true||m.InvoiceId!==c.orderId||m.Currency!=='RUB'||minor(m.Amount)!==c.amount)throw new Error('PAYMENT_SOURCE_MISMATCH');
-  // find may return a refund or only the latest attempt; never interpret that as a capture.
+  // v2 can return a refund. Recover the original capture first, never treat a refund as revenue.
+  if(m.Type===1&&m.Status==='Completed'){
+   const originalId=String(m.OriginalTransactionId);if(!/^\d+$/.test(originalId)||(!c.externalId.startsWith('pending:')&&!c.externalId.startsWith('invoice:')&&c.externalId!==originalId))throw new Error('PAYMENT_SOURCE_MISMATCH');
+   if(c.state!=='SUCCEEDED'&&c.state!=='REFUNDED'){
+    const original=await this.api('/payments/get',{TransactionId:Number(originalId)}),p=original.Model as Record<string,unknown>|undefined;
+    if(original.Success!==true||!p||p.TestMode!==true||p.InvoiceId!==c.orderId||p.Currency!=='RUB'||minor(p.Amount)!==c.amount||p.Status!=='Completed'||p.Type!==0)throw new Error('PAYMENT_SOURCE_MISMATCH');
+    return {externalId:originalId,state:'SUCCEEDED',amount:c.amount,currency:'RUB',eventId:'cp:pay:'+originalId};
+   }
+   return {externalId:originalId,state:'REFUNDED',amount:c.amount,currency:'RUB',eventId:'cp:refund:'+str(String(m.TransactionId))};
+  }
   if(m.Type!==0||m.Refunded===true||m.Status!=='Completed')return null;
   return {externalId:str(String(m.TransactionId)),state:'SUCCEEDED',amount:c.amount,currency:'RUB',eventId:'cp:pay:'+String(m.TransactionId)};
  }

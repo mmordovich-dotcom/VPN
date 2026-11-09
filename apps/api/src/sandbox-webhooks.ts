@@ -8,6 +8,8 @@ import { fail } from './engine.js';
 /** Explicitly installed by a dedicated test harness ONLY. Not registered by production buildApp. */
 export async function sandboxWebhooks(app:FastifyInstance,db:PrismaClient,adapter:SandboxAdapter,legal:LegalService,isolation:'INDEPENDENT_TEST_ENVIRONMENT'){
  if(isolation!=='INDEPENDENT_TEST_ENVIRONMENT'||process.env.NODE_ENV==='production')throw new Error('SANDBOX_ISOLATION_REQUIRED');
+ const scope=await db.$queryRaw<{schema:string}[]>`SELECT current_schema() AS schema`;
+ if(!/^stage20_[a-f0-9]{32}$/.test(scope[0]?.schema??''))throw new Error('SANDBOX_DATABASE_SCOPE_REQUIRED');
  const service=new IntegrationService(db,adapter,legal);
  await app.register(async scope=>{
   scope.setErrorHandler((error,_req,reply)=>{const status=/UNTRUSTED|SOURCE_MISMATCH|ENVIRONMENT_MISMATCH/.test(error instanceof Error?error.message:'')?403:503;return reply.code(status).send({error:status===403?'UNTRUSTED_PROVIDER_EVENT':'SANDBOX_EVENT_UNAVAILABLE'});});
