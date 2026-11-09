@@ -74,7 +74,7 @@ export class CloudPaymentsSandbox implements SandboxAdapter {
   if(m.Type!==0||m.Refunded===true||m.Status!=='Completed')return null;
   return {externalId:str(String(m.TransactionId)),state:'SUCCEEDED',amount:c.amount,currency:'RUB',eventId:'cp:pay:'+String(m.TransactionId)};
  }
- async verify(raw:string,h:Headers,c:Context){
+ async verify(raw:string,h:Headers,c:Context):Promise<Evidence>{
   if(!equal(h['content-hmac']??'',createHmac('sha256',this.secret).update(raw).digest('base64')))throw new Error('UNTRUSTED_PROVIDER_EVENT');
   const p:Record<string,unknown>=Object.fromEntries(new URLSearchParams(raw));
   // Refund notifications omit TestMode/Currency; authenticate then read the ORIGINAL transaction.
@@ -104,7 +104,7 @@ export class TelegramStarsSandbox implements SandboxAdapter {
   await this.api('answerPreCheckoutQuery',{pre_checkout_query_id:query.id,ok,...(!ok?{error_message:'TEST invoice unavailable. Start a new request.'}:{})});return ok;
  }
  authenticate(h:Headers){if(!equal(h['x-telegram-bot-api-secret-token']??'',this.webhookSecret))throw new Error('UNTRUSTED_PROVIDER_EVENT');}
- async verify(raw:string,h:Headers,c:Context){
+ async verify(raw:string,h:Headers,c:Context):Promise<Evidence>{
   this.authenticate(h);
   const u=json(raw),m=u.message as Record<string,unknown>|undefined,p=m?.successful_payment as Record<string,unknown>|undefined,r=m?.refunded_payment as Record<string,unknown>|undefined;
   const value=p??r,from=m?.from as Record<string,unknown>|undefined,chat=m?.chat as Record<string,unknown>|undefined;

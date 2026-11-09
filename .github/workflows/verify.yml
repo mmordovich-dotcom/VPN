@@ -44,6 +44,10 @@ jobs:
       - run: pnpm db:validate
       - run: pnpm test
       - run: pnpm test:integration
+      - name: Restore isolated synthetic backup and recover queue
+        run: pnpm exec tsx scripts/ci-restore-drill.ts
+        env:
+          CI_POSTGRES_CONTAINER: ${{ job.services.postgres.id }}
       - name: Build production web with a non-secret fixture origin
         run: pnpm build:cloud:web
         env:

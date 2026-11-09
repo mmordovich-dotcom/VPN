@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "title": "AXON Status",
+  "configured": false,
+  "defaultState": "PAUSED",
+  "activationRequires": [
+    "owner authorization",
+    "always-on backend",
+    "verified alert contact"
+  ],
+  "monitors": [
+    {
+      "name": "AXON · Site",
+      "url": "https://shared-vps-api.onrender.com/",
+      "method": "GET",
+      "expectStatus": 200,
+      "keyword": "AXON",
+      "intervalSeconds": 300,
+      "state": "PAUSED"
+    },
+    {
+      "name": "AXON · Health",
+      "url": "https://shared-vps-api.onrender.com/health",
+      "method": "GET",
+      "expectStatus": 200,
+      "keyword": "\"status\":\"ok\"",
+      "intervalSeconds": 300,
+      "state": "PAUSED"
+    },
+    {
+      "name": "AXON · API",
+      "url": "https://shared-vps-api.onrender.com/api/v1/auth/config",
+      "method": "GET",
+      "expectStatus": 200,
+      "keyword": "\"publicWebMode\":\"landing\"",
+      "intervalSeconds": 300,
+      "state": "PAUSED"
+    }
+  ],
+  "publicStatusPage": {
+    "title": "AXON Status",
+    "published": false,
+    "include": [
+      "AXON · Site",
+      "AXON · Health",
+      "AXON · API"
+    ],
+    "exclude": [
+      "private diagnostics",
+      "database/provider endpoints",
+      "users",
+      "secrets"
+    ],
+    "displayUptimePromise": false
+  },
+  "alerts": {
+    "contact": null,
+    "verified": false,
+    "channels": [],
+    "testPerformed": false
+  },
+  "privateDiagnostics": {
+    "configured": false,
+    "publiclyListed": false
+  },
+  "reasonPaused": "Render Free idle sleep must not be defeated by 5-minute monitoring."
+}

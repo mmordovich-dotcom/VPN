@@ -46,4 +46,7 @@ describe.sequential('Stage 1.6 Telegram-first without production access',()=>{
 
  it('cancels only an owned subscription after a separate preview and preserves its history',async()=>{const sub=await checkout();const preview=await send('n:stop-ask:'+sub.id);expect(String(preview.body.text)).toContain('Отменить подписку');expect((await db.subscription.findUniqueOrThrow({where:{id:sub.id}})).status).toBe('ACTIVE');await send('stop:'+sub.id);await send('stop:'+sub.id);await send('stop:'+sub.id,true,90,1002);expect((await db.subscription.findUniqueOrThrow({where:{id:sub.id}})).status).toBe('CANCELLED');expect(await db.subscription.count()).toBe(1);expect(await db.order.count()).toBe(1);expect(await db.payment.count()).toBe(1);expect(await db.serverSlot.count({where:{status:'OCCUPIED'}})).toBe(0);});
 
+ it('Stage 2.0 legal and payment-support commands preserve DEMO and do not offer external payment',async()=>{
+  const terms=await send('/terms',false);expect(String(terms.body.text)).toContain('DEMO');expect(String(terms.body.text)).toContain('не утверждены');expect(JSON.stringify(terms.body.reply_markup)).toContain('/#/legal');const help=await send('/paysupport',false);expect(String(help.body.text)).toContain('0 ₽');expect(JSON.stringify(help.body.reply_markup)).toContain('support');expect(JSON.stringify(help.body)).not.toContain('rollypay');const account=await send('account');expect(JSON.stringify(account.body.reply_markup)).toContain('legal');expect(await db.order.count()).toBe(0);
+ });
 });
