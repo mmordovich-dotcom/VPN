@@ -1,4 +1,6 @@
-import { legalPage } from './legal-view.js';
+import { legalPage, legalDocumentPage, legalFooter } from './legal-view.js';
+import { LEGAL_PAGE_PATHS, legalIdForPath } from '@shared-vps/shared';
+import './styles/legal.css';
 import { type PublicWebMode, RELEASE, demoInstructions, instructionPlatforms, purchaseGuidance, purchaseSteps, supportCategories } from '@shared-vps/shared';
 import { SupportView } from './support-view.js';
 import { ReadinessAdmin } from './readiness-admin.js';
@@ -40,7 +42,7 @@ const telegramLaunch=Boolean(window.Telegram?.WebApp?.initData||/(?:tgWebAppData
 let toastTimer: ReturnType<typeof setTimeout>;
 function toast(s: string, kind: 'success' | 'error' = 'success') { mini.feedback(kind); $('#toast').textContent = s; $('#toast').hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => { $('#toast').hidden = true; }, 10000); }
 const nav = [['/', 'Главная'], ['/catalog', 'Каталог'], ['/subscriptions', 'Подписка'], ['/connect', 'Подключение'], ['/support', 'Поддержка'], ['/profile', 'Профиль'], ['/admin', 'Админка']];
-$('#app').innerHTML = `<a class="skip-link" href="#page">К содержимому</a><div class="shell"><header><a class="brand" href="#/" aria-label="AXON — главная"><span class="brand-mark" aria-hidden="true">A</span><span>AXON<small>Shared VPS Platform</small></span></a><div class="header-actions"><span class="demo"><i></i> DEMO MODE</span><button id="theme" class="theme-button" aria-label="Переключить тему">◐</button></div></header><nav class="site-nav" aria-label="Основные разделы">${nav.map(([url, text]) => `<a href="#${url}" data-route="${url}" ${url === '/admin' ? 'data-admin-nav hidden' : ''}>${text}</a>`).join('')}</nav><div class="demo-toolbar"><span id="identity">Гостевой режим</span><button class="text-button" id="login">Войти через Telegram</button></div><main id="page" tabindex="-1"></main><footer><span>AXON / SHARED VPS · STAGE ${RELEASE.stage}</span><span>Демонстрация. Списание 0 ₽. Виртуальные VPS. Демонстрационные идентификаторы не являются VPN-ключами.</span><a href="#/legal">Правовая информация</a><a class="admin-entry" href="#/admin">Для администратора</a></footer></div><nav class="bottom-nav" aria-label="Мобильная навигация">${bottomTabs.map(([url,title,glyph])=>`<a href="#${url}" data-route="${url}">${icon(glyph)}<span>${title}</span></a>`).join('')}</nav><dialog id="dialog" class="dialog" aria-labelledby="dialog-title" aria-describedby="dialog-description"><span class="eyebrow">Демонстрационная операция</span><h2 id="dialog-title"></h2><p id="dialog-description"></p><div class="actions"><button class="secondary" id="dialog-cancel">Отмена</button><button class="primary" id="dialog-confirm">Подтвердить</button></div></dialog><div id="toast" class="toast" role="status" aria-live="polite" hidden></div>`;
+$('#app').innerHTML = `<a class="skip-link" href="#page">К содержимому</a><div class="shell"><header><a class="brand" href="#/" aria-label="AXON — главная"><span class="brand-mark" aria-hidden="true">A</span><span>AXON<small>Shared VPS Platform</small></span></a><div class="header-actions"><span class="demo"><i></i> DEMO MODE</span><button id="theme" class="theme-button" aria-label="Переключить тему">◐</button></div></header><nav class="site-nav" aria-label="Основные разделы">${nav.map(([url, text]) => `<a href="#${url}" data-route="${url}" ${url === '/admin' ? 'data-admin-nav hidden' : ''}>${text}</a>`).join('')}</nav><div class="demo-toolbar"><span id="identity">Гостевой режим</span><button class="text-button" id="login">Войти через Telegram</button></div><main id="page" tabindex="-1"></main><footer><span>AXON / SHARED VPS · STAGE ${RELEASE.stage}</span><span>Демонстрация. Списание 0 ₽. Виртуальные VPS. Демонстрационные идентификаторы не являются VPN-ключами.</span>${legalFooter()}<a class="admin-entry" href="#/admin">Для администратора</a></footer></div><nav class="bottom-nav" aria-label="Мобильная навигация">${bottomTabs.map(([url,title,glyph])=>`<a href="#${url}" data-route="${url}">${icon(glyph)}<span>${title}</span></a>`).join('')}</nav><dialog id="dialog" class="dialog" aria-labelledby="dialog-title" aria-describedby="dialog-description"><span class="eyebrow">Демонстрационная операция</span><h2 id="dialog-title"></h2><p id="dialog-description"></p><div class="actions"><button class="secondary" id="dialog-cancel">Отмена</button><button class="primary" id="dialog-confirm">Подтвердить</button></div></dialog><div id="toast" class="toast" role="status" aria-live="polite" hidden></div>`;
 let mini = new MiniAppBridge(undefined, document.documentElement, path => { location.hash = path; });
 try { const saved = localStorage.getItem('shared-vps-theme'); document.documentElement.dataset.theme = saved === 'light' ? 'light' : 'dark'; } catch { document.documentElement.dataset.theme = 'dark'; }
 $('#theme').onclick = () => { const theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'; document.documentElement.dataset.theme = theme; try { localStorage.setItem('shared-vps-theme', theme); } catch { /* Optional appearance only. */ } mini.feedback('selection'); };
@@ -70,6 +72,8 @@ function subCard(s: Sub, connect: boolean) {
 
 function recentOrders(orders: Order[]) { return '<div class="history-cards recent-orders">' + orders.map(o => `<a class="history-card recent-order" href="#/orders"><div class="card-top"><strong>Заказ ${e(o.id.slice(0,8))}</strong>${statusBadge(o.status)}</div><div class="history-meta"><span>${date(o.createdAt ?? null)}</span><strong>${money(o.amount,o.currency)}</strong></div><span class="small">Открыть заказ →</span></a>`).join('') + '</div>'; }
 Object.assign(messages,{TICKET_NOT_FOUND:'Обращение не найдено или принадлежит другому аккаунту.',TICKET_CLOSED:'Обращение закрыто. Создайте новое или попросите администратора открыть его снова.',STALE_TICKET:'Статус уже изменился. Обновите переписку.',MORE_EVIDENCE_REQUIRED:'Нужны две последовательные неудачи с интервалом не менее минуты и свежая проверка.',RECOVERY_CHECK_REQUIRED:'Сначала запишите свежую успешную проверку.',CAPACITY_APPROVAL_REQUIRED:'Режим 4 закрыт. Сначала требуется отдельная оценка и разрешение в инструментах готовности.',COMPENSATION_ALREADY_GRANTED:'Компенсация по этому инциденту уже записана.',COMPENSATION_OVERLAP:'Этот период сбоя уже покрыт компенсацией.',COMPENSATION_EXCEEDS_OUTAGE:'Часов больше подтверждённой длительности сбоя.',SUBSCRIPTION_NOT_AFFECTED:'Подписка не активна или не связана с инцидентом.',RESOLVED_PROVIDER_INCIDENT_REQUIRED:'Нужен подтверждённый и закрытый инфраструктурный демо-инцидент.',DRAFT_REVIEW_REQUIRED:'Сначала проверьте полный текст черновика.',STALE_DRAFT:'Черновик изменился. Обновите страницу и проверьте его заново.'});
+function isLegalPath(path:string){return (LEGAL_PAGE_PATHS as readonly string[]).includes(path);}
+function currentPath(){return location.hash.startsWith('#/')?appRoute(location.hash):isLegalPath(location.pathname.replace(/\/$/,''))?location.pathname.replace(/\/$/,''):appRoute(location.hash);}
 let generation = 0;
 const adminLists = new AdminLists(api, errorText, bind);
 const accountLists = new AccountLists(api, errorText, bind);
@@ -82,10 +86,10 @@ let checkoutTimer: ReturnType<typeof setTimeout> | undefined;
 const checkoutAttempts = new Map<string,number>();
 async function route() {
   loginView.unmount(); adminLists.unmount(); accountLists.unmount(); supportView.unmount(); readinessAdmin.unmount(); clearTimeout(checkoutTimer);
-  const current = ++generation; const path = appRoute(location.hash); const page = $('#page');
+  const current = ++generation; const path = currentPath(); const page = $('#page');
   frame(path);
   page.dataset.route = path;
-  if(path==='/legal'){mini.route('/legal');document.title='Правовая информация · AXON';page.innerHTML=legalPage(new URLSearchParams(location.hash.split('?')[1]??'').get('document'));page.setAttribute('aria-busy','false');return;}
+  if(isLegalPath(path)){mini.route(path);document.title=(path==='/legal'?'Правовая информация':'Документ')+' · AXON';page.innerHTML=path==='/legal'?legalPage(new URLSearchParams(location.hash.split('?')[1]??'').get('document')):legalDocumentPage(legalIdForPath(path)!);document.title=(page.querySelector('h1')?.textContent??'Правовая информация')+' · AXON';page.setAttribute('aria-busy','false');window.scrollTo(0,0);page.focus({preventScroll:true});return;}
   if(!authReady&&telegramLaunch){page.innerHTML=loading();return;}
   if(authReady&&mini.active&&needsLogout){document.title='Подтверждение аккаунта · AXON';page.innerHTML=heading('Подключим ваш Telegram.','В браузере была сессия другого аккаунта или требуется новый вход.')+'<section class="panel"><p>Данные другого аккаунта не показываются. Подключите текущий Telegram; если срок входа истёк, откройте приложение заново из бота.</p><button class="primary" data-logout>Подключить текущий аккаунт</button></section>';page.setAttribute('aria-busy','false');bind();return;}
   if(!fullApplication()&&!administrativeRoute(path,location.hash,me?.role)){document.title='AXON · Всё внутри Telegram';page.innerHTML=telegramLanding();page.setAttribute('aria-busy','false');return;}
@@ -224,10 +228,12 @@ async function start() {
         if (!(me?.miniApp===true && error instanceof ApiError && error.status === 401 && error.message === 'LOGIN_REPLAY')) { needsLogout = Boolean(me); me = null; throw error; }
       }
     }
-  } catch (err) { toast(errorText(err), 'error'); }
+  } catch (err) { if(!isLegalPath(currentPath()))toast(errorText(err), 'error'); }
   authReady = true; identity(); await route();
 }
 document.querySelector<HTMLAnchorElement>('.skip-link')!.onclick = event => { event.preventDefault(); $('#page').focus(); };
-frame(appRoute(location.hash));
+document.addEventListener('click',event=>{const target=event.target instanceof Element?event.target.closest<HTMLAnchorElement>('a'):null;if(!target)return;const anchor=target.dataset.legalAnchor;if(anchor){event.preventDefault();const heading=document.getElementById(anchor);heading?.scrollIntoView({block:'start'});heading?.focus({preventScroll:true});return;}if(mini.active&&target.dataset.legalPath&&!event.ctrlKey&&!event.metaKey){event.preventDefault();location.hash=target.dataset.legalPath;}});
+frame(currentPath());
 $('#page').innerHTML = telegramLaunch?loading():telegramLanding();
+if(isLegalPath(currentPath()))void route();
 void start();

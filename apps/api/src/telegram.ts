@@ -2,7 +2,7 @@ import {BotPresentation,sectionForAction,presentationDigest,plainPresentationBod
 import {botVisualConfig,type BotVisualConfig} from './bot-visual-config.js';
 import { instructionText, instructionPlatforms, purchaseGuidance, purchaseSteps, supportCategories, supportStatuses, type SupportCategory } from '@shared-vps/shared';
 import { SupportService } from './support.js';
-import { appLabel, miniAppButton, inlineMainMenu, contextualKeyboard, withoutButtonStyles, supportChunks, inline, botStatus, botError } from './bot-ui.js';
+import { appLabel, legalDocumentRows, miniAppButton, inlineMainMenu, contextualKeyboard, withoutButtonStyles, supportChunks, inline, botStatus, botError } from './bot-ui.js';
 import { randomUUID, createHash } from 'node:crypto';
 import { backoff, databaseNow } from './job-queue.js';
 import { TelegramFailure, telegramFailure } from './telegram-errors.js';
@@ -152,17 +152,17 @@ export class TelegramGateway {
       content = 'Уведомления\nНапоминания о сроке: ' + (preference.remindersEnabled ? 'включены' : 'выключены') + '\nСтатусы заказов и продления: ' + (preference.updatesEnabled ? 'включены' : 'выключены') + '\nИзменения не влияют на ответы бота и вход на сайт.';
       markup = inline([[{text:preference.remindersEnabled ? 'Выключить напоминания' : 'Включить напоминания',callback_data:'notify:reminders:'+(preference.remindersEnabled?'off':'on')}],[{text:preference.updatesEnabled ? 'Выключить статусы' : 'Включить статусы',callback_data:'notify:updates:'+(preference.updatesEnabled?'off':'on')}],[back]]);
     } else if(text==='/legal'||text==='/terms'||text==='legal'){
-      content='Правовая информация AXON\n\nDEMO: списание 0 ₽, реальная VPN-услуга не предоставляется. Коммерческие документы ещё не утверждены; использование DEMO не является принятием оферты.\n\nПродавец и юридические контакты будут опубликованы после согласования. По вопросам оплаты: /paysupport. Не отправляйте коды, токены и пароли.';
-      markup=inline([...(this.config.PUBLIC_ORIGIN?[[{text:'Правовая информация',url:this.config.PUBLIC_ORIGIN+'/#/legal'}]]:[]),[{text:'Поддержка',callback_data:'support'}],[back]]);
+      content='Правовая информация AXON\n\nDEMO: списание 0 ₽, реальная VPN-услуга не предоставляется. Коммерческие документы ещё не утверждены. Ниже доступны полные черновики документов: они не действуют и не предлагаются к принятию. Использование DEMO не является принятием оферты.\n\nПродавец и юридические контакты будут опубликованы после согласования. По вопросам оплаты: /paysupport. Не отправляйте коды, токены и пароли.';
+      markup=inline([...legalDocumentRows(this.config.PUBLIC_ORIGIN),...(this.config.PUBLIC_ORIGIN?[[{text:'Все документы',url:this.config.PUBLIC_ORIGIN+'/#/legal'}]]:[]),[{text:'Поддержка',callback_data:'support'}],[back]]);
     } else if(text==='/paysupport'){
       content='Поддержка по оплате AXON\n\nСейчас все операции демонстрационные, списание 0 ₽. Если вопрос связан с заказом, откройте обращение и укажите его номер и дату. Коды, токены, данные карты и документы в чат не присылайте.';
-      markup=inline([[{text:'Открыть обращение',callback_data:'support'}],[{text:'История заказов',callback_data:'orders'}],[{text:'Правовая информация',callback_data:'legal'}],[back]]);
+      markup=inline([[{text:'Открыть обращение',callback_data:'support'}],[{text:'История заказов',callback_data:'orders'}],[{text:'📄 Документы и условия',callback_data:'legal'}],[back]]);
     }
     else if (text.startsWith('/start') || text === 'menu') content = 'AXON\n\nУправляйте подпиской, просматривайте инструкции и получайте поддержку прямо в Telegram.\n\nДемонстрационная версия: списание 0 ₽. Реальные платежи и подключения пока недоступны.';
     else if (text === 'account') {
       content='Личный кабинет AXON\n\n'+(last?last.plan.name+' · '+botStatus(last.status)+'\nОкончание: '+(last.expiresAt?.toISOString().slice(0,10)??'—')+' UTC':'Подписки пока нет. Выберите тариф, чтобы познакомиться с демо.')+'\n\nВсе действия доступны здесь, без обязательного Mini App.';
       const app=miniAppButton(this.config.PUBLIC_ORIGIN);
-      markup=inline([[{text:'📦 Моя подписка',callback_data:'subscription'}],[{text:last?'🔄 Продлить':'⚡ Выбрать подписку',callback_data:last?'renew':'buy'}],[{text:'📜 История заказов',callback_data:'orders'}],[{text:'🔔 Уведомления',callback_data:'notifications'}],[{text:'Правовая информация',callback_data:'legal'}],...(app?[[app]]:[]),...(user.role==='ADMIN'?[[{text:'Вход администратора в браузере',callback_data:'login:link'}],[{text:'Получить код входа',callback_data:'login:code'}]]:[]),[back]]);
+      markup=inline([[{text:'📦 Моя подписка',callback_data:'subscription'}],[{text:last?'🔄 Продлить':'⚡ Выбрать подписку',callback_data:last?'renew':'buy'}],[{text:'📜 История заказов',callback_data:'orders'}],[{text:'🔔 Уведомления',callback_data:'notifications'}],[{text:'📄 Документы и условия',callback_data:'legal'}],...(app?[[app]]:[]),...(user.role==='ADMIN'?[[{text:'Вход администратора в браузере',callback_data:'login:link'}],[{text:'Получить код входа',callback_data:'login:code'}]]:[]),[back]]);
     }
     else if (text === 'orders' || text.startsWith('orders:')) {
       const cursor=text==='orders'?undefined:text.slice(7);
@@ -249,7 +249,7 @@ export class TelegramGateway {
       if(cursor&&(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cursor)||!await this.db.supportTicket.count({where:{id:cursor,userId:user.id}})))fail(404,'TICKET_NOT_FOUND');
       const tickets=await this.db.supportTicket.findMany({where:{userId:user.id},take:6,orderBy:[{createdAt:'desc'},{id:'desc'}],...(cursor?{cursor:{id:cursor},skip:1}:{})});
       content='Поддержка\n\n'+(tickets.length?'Выберите обращение: здесь можно прочитать ответ, продолжить переписку и закрыть решённый вопрос.':'Обращений пока нет. Выберите «Новое обращение», затем тему и опишите вопрос.')+'\n\nПароли и коды присылать не нужно.';
-      markup=inline([...tickets.slice(0,5).map(t=>[{text:'№'+t.number+' · '+(supportStatuses[t.status as keyof typeof supportStatuses]??t.status),callback_data:'support:view:'+t.id}]),...(tickets.length>5?[[{text:'Ранее',callback_data:'support:list:'+tickets[4]!.id}]]:[]),[{text:'Новое обращение',callback_data:'support:new'}],[back]]);
+      markup=inline([...tickets.slice(0,5).map(t=>[{text:'№'+t.number+' · '+(supportStatuses[t.status as keyof typeof supportStatuses]??t.status),callback_data:'support:view:'+t.id}]),...(tickets.length>5?[[{text:'Ранее',callback_data:'support:list:'+tickets[4]!.id}]]:[]),[{text:'Новое обращение',callback_data:'support:new'}],[{text:'📄 Документы и условия',callback_data:'legal'}],[back]]);
     } else if (text.startsWith('support:view:') || text.startsWith('support:page:') || text.startsWith('support:part:')) {
       const value=text.split(':')[2]??''; if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value))fail(400,'INVALID_BUTTON');
       const isPart=text.startsWith('support:part:');const part=isPart?Number(text.split(':')[3]):0;
