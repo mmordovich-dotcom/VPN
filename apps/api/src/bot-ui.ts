@@ -1,3 +1,4 @@
+import { LEGAL_LINKS } from '@shared-vps/shared';
 export const appLabel = 'Открыть приложение';
 export type BotButton = { text: string; callback_data?: string; web_app?: {url:string}; url?:string; style?:'primary'|'success'|'danger'; icon_custom_emoji_id?:string };
 export const inline = (items: BotButton[][]) => ({inline_keyboard:items});
@@ -42,3 +43,7 @@ export function botError(code:string) {
 }
 
 export function supportChunks(text:string){let cut=3000;const code=text.charCodeAt(cut-1);if(code>=0xD800&&code<=0xDBFF)cut--;return text.length>cut?[text.slice(0,cut),text.slice(cut)]:[text];}
+
+export function legalDocumentRows(origin:string|undefined):BotButton[][] {
+ if(!origin)return [];try{const url=new URL(origin);if(url.protocol!=='https:'||url.username||url.password)return [];return LEGAL_LINKS.map(d=>[{text:d.label,url:url.origin+d.path}]);}catch{return [];}
+}
